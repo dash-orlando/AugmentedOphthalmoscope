@@ -22,4 +22,10 @@ picam = picamera.PiCamera()
 # =======================
 # Operation
 # =======================
-camera.start_preview()
+picam.start_preview()
+
+
+"""
+References
+1- Raspberry Pi Camera Module Documentation - https://www.raspberrypi.org/documentation/usage/camera/python/README.md
+"""
