@@ -21,12 +21,11 @@ time.sleep(3)
 
 # Capture Image
 camera.capture('0.jpg')
-img = Image("0.jpg")
-camera.stop_preview()
+img = Image('0.jpg')
 img.show()
 
 # Manipulate image for easier blob detection
-invert = img.erode(2).invert()
+invert = img.erode(1).invert()
 invert.save('1.jpg')
 invert.show()
 
@@ -49,14 +48,24 @@ if (blobs is not None):
 
 # Load overlay
 image = Image('2.jpg')
-overlay = Image('hqdefault.jpg')
+overlay = Image('overlay.jpg')
 
 # subtract the greenscreen behind the overlay image
 mask = overlay.hueDistance(color=Color.GREEN).binarize()
 overlay = (overlay - mask)
 overlaySize = overlay.size()
 
+# Circular crop of the overlay in order to fit inside circle
+overlay.drawCircle((overlaySize[0]/2, overlaySize[1]/2), radius, SimpleCV.Color.WHITE,10)
+overlay = overlay.findBlobs()
+if (overlay is not None):
+    overlayCircles = blobs.filter([b.isCircle(0.2) for b in blobs])
+    if overlayCircles:
+        overlay = overlay[-1].crop()
+        overlaySize = overlay.size()
+
 #blit(image, coordinates=(x,y)). Where (x,y) is where the overlay image
 #top left corner and the background image are pinned.
 image.dl().blit(overlay, (xy[0]-(overlaySize[0]/2), xy[1]-(overlaySize[1]/2)))
 image.show()
+image.save('final.jpg')
