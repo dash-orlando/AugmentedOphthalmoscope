@@ -1,12 +1,12 @@
 #!/usr/bin/python2.7
 #A proof-of-concept image processing code
 '''
-Code works and is capable of imposing one picture over another.
-Known issues:
-    1- For some reason I am having trouble inserting the image layer onto the
-       xy-coordinate I want.
-    2- No fallback function in case no circles (retina) was detected. Code
-       simply terminates and exits.
+* Code works and is capable of imposing one picture over another.
+* Every process saves an image. That is used for testing purposes
+* and is absolutely unnecessary.
+* Known issues:
+*   1- No fallback function in case no circles (retina) are detected. Code
+*      simply terminates and exits.
 '''
 
 from picamera import PiCamera
@@ -33,10 +33,13 @@ invert.show()
 # Find blobs and filter circles
 blobs = invert.findBlobs()
 if (blobs is not None):
-    circles = blobs.filter([b.isCircle(0.1) for b in blobs])
+    #isCircle(THRESHOLD). The higher THRESHOLD, the more circles are detected.
+    circles = blobs.filter([b.isCircle(0.2) for b in blobs])
     blobs.draw()
+    #Outline circles
     if circles:
         for b in circles:
+            #uncomment line below to control radius filter
             #if int(b.radius()) > 1 and int(b.radius()) < 50:
             invert.drawCircle((b.x, b.y), b.radius(),SimpleCV.Color.BLUE,2)
             xy = (b.x, b.y)
@@ -47,11 +50,13 @@ if (blobs is not None):
 # Load overlay
 image = Image('2.jpg')
 overlay = Image('hqdefault.jpg')
-image.dl().blit(overlay, xy)
+
+# subtract the greenscreen behind the overlay image
+mask = overlay.hueDistance(color=Color.GREEN).binarize()
+overlay = (overlay - mask)
+overlaySize = overlay.size()
+
+#blit(image, coordinates=(x,y)). Where (x,y) is where the overlay image
+#top left corner and the background image are pinned.
+image.dl().blit(overlay, (xy[0]-(overlaySize[0]/2), xy[1]-(overlaySize[1]/2)))
 image.show()
-'''overlaydl = DrawingLayer((radius*2,radius*2))
-overlaydl.blit(overlay, xy)
-image.addDrawingLayer(overlaydl)
-image.applyLayers()
-image.show()
-'''
