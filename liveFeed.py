@@ -1,23 +1,24 @@
 '''
-* VERSION: 0.5
-*   - Multithreading the raspberry picam now allows for a higher framerate
+* VERSION: 0.6
+*   - Program can successfully detect a pupil at a close range
+*   - Resolution reduced to (480, 368)
+*   - Added min/maxRadius trackbars to manipulate circle
+*     constrains mid-session
 *
 * KNOWN ISSUES:
-*   - Circle detection needs improvement and filtering
-*   - I/O call must be moved into a separate thread to further
-*     increase FPS and decrease the effects of I/O latency
+*   - Minor modification to circle detection algorithm is needed
 '''
 
 print __doc__
 
 from imutils.video.pivideostream import PiVideoStream
-from imutils.video import FPS
-from picamera.array import PiRGBArray
-from picamera import PiCamera
-import SimpleCV
-import time
+from time import sleep
 import cv2
 import numpy
+
+# Define placeholder function for trackbar
+def placeholder(x):
+    pass
 
 # Define right/left mouse click events
 def control(event, x, y, flags, param):
@@ -32,13 +33,17 @@ def control(event, x, y, flags, param):
         normalDisplay=not(normalDisplay)
 
 # Setup camera
-stream = PiVideoStream().start()
+stream = PiVideoStream(hf=True).start()
 normalDisplay = True
-time.sleep(2)
+sleep(2)
 
 # Setup window and mouseCallback event
-cv2.namedWindow("Live Feed ver0.5")
-cv2.setMouseCallback("Live Feed ver0.5", control)
+cv2.namedWindow("Live Feed ver0.6")
+cv2.setMouseCallback("Live Feed ver0.6", control)
+
+# Create a track bar for HoughCircles parameters
+cv2.createTrackbar("minRadius", "Live Feed ver0.6", 5, 200, placeholder)
+cv2.createTrackbar("maxRadius", "Live Feed ver0.6", 70, 250, placeholder)
 
 # Infinite loop
 while True:
@@ -48,6 +53,10 @@ while True:
     
     # Convert into grayscale because HoughCircle only accepts grayscale images
     bgr2gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Get trackbar position and reflect it in HoughCircles parameters input
+    minRadius = cv2.getTrackbarPos("minRadius", "Live Feed ver0.6")
+    maxRadius = cv2.getTrackbarPos("maxRadius", "Live Feed ver0.6")
     
     # Reduce Noise
     blur = cv2.medianBlur(bgr2gray,5)
@@ -58,8 +67,17 @@ while True:
                                       cv2.THRESH_BINARY,11,3.5)
 
     # Scan for circles
-    circles = cv2.HoughCircles(threshold, cv2.cv.CV_HOUGH_GRADIENT,1.2,100,
-                               param1=55,param2=50,minRadius=50,maxRadius=100)
+    circles = cv2.HoughCircles(threshold, cv2.HOUGH_GRADIENT, 12, 396,
+                               191, 199, minRadius, maxRadius)
+    '''
+    Experimental values:            Original Values (kinda crappy but still):
+    dp = 12                         dp = 1.2
+    minDist = 396                   minDist = 100
+    param1 = 191                    param1 = 55
+    param2 = 199                    param2 = 50
+    minRadius = 5                   minRadius = 50
+    maxRadius = 70                  maxRadius = 100
+    '''
 
     # If circles are found draw them
     if circles is not None:
@@ -70,8 +88,8 @@ while True:
 
     # Live feed display toggle
     if normalDisplay:
-        cv2.imshow("Live Feed ver0.5", image)
+        cv2.imshow("Live Feed ver0.6", image)
         key = cv2.waitKey(1) & 0xFF
     elif not(normalDisplay):
-        cv2.imshow("Live Feed ver0.5", threshold)
+        cv2.imshow("Live Feed ver0.6", threshold)
         key = cv2.waitKey(1) & 0xFF
