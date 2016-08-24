@@ -38,7 +38,7 @@ sudo cmake \
 -D INSTALL_C_EXAMPLES=OFF \
 -D INSTALL_PYTHON_EXAMPLES=ON \
 -D BUILD_EXAMPLES=ON \
--D OPENCV_EXTRA_MODULES_PATH=~/opencv_contrib-3.1.0/modules \
+-D OPENCV_EXTRA_MODULES_PATH=~/opencv_contrib-3.1.0/modules ..
 
 #Use 2 cores to insure proper installation and avoid build errors.
 sudo make -j2
