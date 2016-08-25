@@ -11,6 +11,7 @@ sudo apt-get install libatlas-base-dev gfortran python2.7-dev
 sudo apt-get install libgtkglext1 libgtkglext1-dev
 
 #Download/Install pip & numpy:-
+cd ~
 sudo wget https://bootstrap.pypa.io/get-pip.py
 sudo python get-pip.py
 sudo pip install numpy
@@ -38,13 +39,12 @@ sudo cmake \
 -D INSTALL_C_EXAMPLES=OFF \
 -D INSTALL_PYTHON_EXAMPLES=ON \
 -D BUILD_EXAMPLES=ON \
--D OPENCV_EXTRA_MODULES_PATH=~/opencv_contrib-3.1.0/modules \
+-D OPENCV_EXTRA_MODULES_PATH=~/opencv_contrib-3.1.0/modules ..
 
 #Use 2 cores to insure proper installation and avoid build errors.
 sudo make -j2
 sudo make install
 sudo ldconfig
-
 
 #Download imutils package to enable picam/webcam multithreading:-
 #Set desired resolutions by editing pivideostream.py found at
