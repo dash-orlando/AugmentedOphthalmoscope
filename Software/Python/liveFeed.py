@@ -1,18 +1,13 @@
 '''
 * NOTE: Place Overlay.png in same directory as liveFeed.py
 *
-* VERSION: 0.7
+* VERSION: 0.8
+*   - FIXED MAJOR CRASHING ISSUE!!!
 *   - Program can successfully detect a circle (pupil) at
 *     close range (~35mm).
-*   - Resolution reduced to (480, 368).
-*   - Added min/maxRadius trackbars to manipulate circle
-*     constraints mid-session.
-*   - Overlaying an image inside the detected circle (pupil)
-*     is now possible.
 *
 * KNOWN ISSUES:
-*   - Minor modification to circle detection algorithm is needed.
-*   - Program crashed when no circles are detected.
+*   - Further modification to circle detection algorithm is needed.
 *
 * AUTHOR: Mohammad Odeh
 *
@@ -27,12 +22,12 @@
 * LEFT CLICK: Toggle view.
 '''
 
+ver = "Live Feed Ver0.8"
 print __doc__
 
 # Import necessary modules
 from imutils.video.pivideostream import PiVideoStream
 from time import sleep
-import imutils
 import cv2
 import numpy
 
@@ -67,12 +62,12 @@ normalDisplay = True
 sleep(2)
 
 # Setup window and mouseCallback event
-cv2.namedWindow("Live Feed ver0.7")
-cv2.setMouseCallback("Live Feed ver0.7", control)
+cv2.namedWindow(ver)
+cv2.setMouseCallback(ver, control)
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar("minRadius", "Live Feed ver0.7", 5, 200, placeholder)
-cv2.createTrackbar("maxRadius", "Live Feed ver0.7", 70, 250, placeholder)
+cv2.createTrackbar("minRadius", ver, 5, 200, placeholder)
+cv2.createTrackbar("maxRadius", ver, 70, 250, placeholder)
 
 # Infinite loop
 while True:
@@ -91,8 +86,8 @@ while True:
     bgr2gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     # Get trackbar position and reflect it in HoughCircles parameters input
-    minRadius = cv2.getTrackbarPos("minRadius", "Live Feed ver0.7")
-    maxRadius = cv2.getTrackbarPos("maxRadius", "Live Feed ver0.7")
+    minRadius = cv2.getTrackbarPos("minRadius", ver)
+    maxRadius = cv2.getTrackbarPos("maxRadius", ver)
     
     # Reduce Noise
     blur = cv2.medianBlur(bgr2gray,5)
@@ -119,24 +114,35 @@ while True:
     if circles is not None:
         circles = numpy.round(circles[0,:]).astype("int")
         for (x, y, r) in circles:
-            if (x,y,r) is not None:
-                # Resize watermark image
-                resized = cv2.resize(overlayImg, (2*r, 2*r),
-                                     interpolation = cv2.INTER_AREA)
+            # Resize watermark image
+            resized = cv2.resize(overlayImg, (2*r, 2*r),
+                                 interpolation = cv2.INTER_AREA)
 
+            # Retrieve overlay location
+            y1 = y-r
+            y2 = y+r
+            x1 = x-r
+            x2 = x+r
+
+            # Check whether overlay location is within window resolution
+            if x1>0 and x1<w and x2>0 and x2<w and y1>0 and y1<h and y2>0 and y2<h:
                 # Place overlay image inside circle
-                overlay[y-r:y+r,x-r:x+r]=resized
-    
+                overlay[y1:y2,x1:x2]=resized
+
                 # Join overlay and live feed
                 output = numpy.array(numpy.clip(frame+overlay, 0,255),"uint8")
                  
-            # Draw circle
-            cv2.circle(output, (x,y),r,(0,255,0),4)
+                # Draw circle
+                cv2.circle(output, (x,y),r,(0,255,0),4)
+                
+            # If not within window resolution keep looking
+            else:
+                output = frame
     
     # Live feed display toggle
     if normalDisplay:
-        cv2.imshow("Live Feed ver0.7", output)
-        key = cv2.waitKey(1) & 0xFF
+            cv2.imshow(ver, output)
+            key = cv2.waitKey(1) & 0xFF
     elif not(normalDisplay):
-        cv2.imshow("Live Feed ver0.7", threshold)
+        cv2.imshow(ver, threshold)
         key = cv2.waitKey(1) & 0xFF
