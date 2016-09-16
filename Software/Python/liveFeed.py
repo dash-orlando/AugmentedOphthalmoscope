@@ -1,13 +1,14 @@
 '''
-* NOTE: Place Overlay.png in same directory as liveFeed.py
+* NOTE: Overaly must be specified using the -o or --overlay flag
 *
-* VERSION: 0.8
+* VERSION: 0.8.5
 *   - FIXED MAJOR CRASHING ISSUE!!!
-*   - Program can successfully detect a circle (pupil) at
-*     close range (~35mm).
+*   - Added various flags to fine tune code execution
+*       (i.e. python liveFeed.py -d 1 -a 0.25 -o /path/to/overlay.png)
 *
 * KNOWN ISSUES:
-*   - Further modification to circle detection algorithm is needed.
+*   - On occasion, circles are detected when there is non.
+*   - Overlay images used need some cleaning up.
 *
 * AUTHOR: Mohammad Odeh
 *
@@ -22,12 +23,13 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.8"
+ver = "Live Feed Ver0.8.5"
 print __doc__
 
 # Import necessary modules
 from imutils.video.pivideostream import PiVideoStream
 from time import sleep
+import argparse
 import cv2
 import numpy
 
@@ -47,8 +49,18 @@ def control(event, x, y, flags, param):
     elif event == cv2.EVENT_LBUTTONDOWN:
         normalDisplay=not(normalDisplay)
 
+# Construct argument parser
+ap = argparse.ArgumentParser()
+ap.add_argument("-o", "--overlay", required=True,
+                help="path to overlay image")
+ap.add_argument("-a", "--alpha", type=float, default=0.85,
+                help="set alpha level (smaller = more transparent).\ndefault=0.85")
+ap.add_argument("-d", "--debug", type=int, default=0,
+                help="set flag equal to one (1) to enable debugging")
+args = vars(ap.parse_args())
+
 # Load overlay image with Alpha channel
-overlayImg = cv2.imread("Overlay.png", cv2.IMREAD_UNCHANGED)
+overlayImg = cv2.imread(args["overlay"], cv2.IMREAD_UNCHANGED)
 (wH, wW) = overlayImg.shape[:2]
 (B, G, R, A) = cv2.split(overlayImg)
 B = cv2.bitwise_and(B, B, mask=A)
@@ -66,7 +78,9 @@ cv2.namedWindow(ver)
 cv2.setMouseCallback(ver, control)
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar("minRadius", ver, 5, 200, placeholder)
+cv2.createTrackbar("dp", ver, 9, 50, placeholder)
+cv2.createTrackbar("param2", ver, 43, 750, placeholder)
+cv2.createTrackbar("minRadius", ver, 20, 200, placeholder)
 cv2.createTrackbar("maxRadius", ver, 70, 250, placeholder)
 
 # Infinite loop
@@ -86,6 +100,8 @@ while True:
     bgr2gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     # Get trackbar position and reflect it in HoughCircles parameters input
+    dp = cv2.getTrackbarPos("dp", ver)
+    param2 = cv2.getTrackbarPos("param2", ver)
     minRadius = cv2.getTrackbarPos("minRadius", ver)
     maxRadius = cv2.getTrackbarPos("maxRadius", ver)
     
@@ -98,16 +114,16 @@ while True:
                                       cv2.THRESH_BINARY,11,3.5)
 
     # Scan for circles
-    circles = cv2.HoughCircles(threshold, cv2.HOUGH_GRADIENT, 12, 396,
-                               191, 199, minRadius, maxRadius)
+    circles = cv2.HoughCircles(threshold, cv2.HOUGH_GRADIENT, dp, 396,
+                               191, param2, minRadius, maxRadius)
     '''
-    Experimental values:            Original Values (buggy):
-    dp = 12                         dp = 1.2
-    minDist = 396                   minDist = 100
-    param1 = 191                    param1 = 55
-    param2 = 199                    param2 = 50
-    minRadius = 5                   minRadius = 50
-    maxRadius = 70                  maxRadius = 100
+    Experimental values:            Original Values:
+    dp = 9                          dp = 12
+    minDist = 396                   minDist = 396
+    param1 = 191                    param1 = 191
+    param2 = 43                     param2 = 199
+    minRadius = 20                  minRadius = 5
+    maxRadius = 70                  maxRadius = 70
     '''
 
     # If circles are found draw them
@@ -129,11 +145,13 @@ while True:
                 # Place overlay image inside circle
                 overlay[y1:y2,x1:x2]=resized
 
-                # Join overlay and live feed
-                output = numpy.array(numpy.clip(frame+overlay, 0,255),"uint8")
-                 
-                # Draw circle
-                cv2.circle(output, (x,y),r,(0,255,0),4)
+                # Join overlay with live feed and apply specified transparency level
+                output = cv2.addWeighted(overlay, args["alpha"], frame, 1.0, 0)
+
+                # If debug flag is invoked
+                if args["debug"] == 1:
+                    # Draw circle
+                    cv2.circle(output, (x,y),r,(0,255,0),4)
                 
             # If not within window resolution keep looking
             else:
