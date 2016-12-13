@@ -1,10 +1,13 @@
 '''
-* NOTE: Overaly must be specified using the -o or --overlay flag
+* NOTE: If overlay is NOT specified a sample overlay is chosed by default
+* USEFUL ARGUMENTS:
+*   -o/--overlay: Specify overlay file
+*   -a/--alpha: Specify transperancy level (0.0 - 1.0)
+*   -b/--brightness: LED brightness level (0 - 255)
 *
-* VERSION: 0.8.7
-*   - Added LED Ring
-*   - Added various flags to fine tune code execution
-*       (i.e. python liveFeed.py -d 1 -a 0.25 -o /path/to/overlay.png)
+* VERSION: 0.8.9
+*   - Change brightness level of LED Ring
+*   - Specifying an overlay file is NOT required anymore
 *
 * KNOWN ISSUES:
 *   - Due to the way the prototype is set up, the LED Ring doesn't always
@@ -19,14 +22,13 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.8.7"
+ver = "Live Feed Ver0.8.9"
 print __doc__
 
 # Import necessary modules
 from imutils.video.pivideostream import PiVideoStream
 from time import sleep
 from LEDRing import *
-import argparse
 import cv2
 import numpy
 
@@ -49,18 +51,13 @@ def control(event, x, y, flags, param):
     elif event == cv2.EVENT_LBUTTONDOWN:
         normalDisplay=not(normalDisplay)
 
-# Construct argument parser
-ap = argparse.ArgumentParser()
-ap.add_argument("-o", "--overlay", required=True,
-                help="path to overlay image")
-ap.add_argument("-a", "--alpha", type=float, default=0.85,
-                help="set alpha level (smaller = more transparent).\ndefault=0.85")
-ap.add_argument("-d", "--debug", type=int, default=0,
-                help="set flag equal to one (1) to enable debugging")
-args = vars(ap.parse_args())
-
+# Check whether an overlay is specified
 # Load overlay image with Alpha channel
-overlayImg = cv2.imread(args["overlay"], cv2.IMREAD_UNCHANGED)
+if args["overlay"] is not None:
+    overlayImg = cv2.imread(args["overlay"], cv2.IMREAD_UNCHANGED)
+else:
+    overlayImg = cv2.imread("Overlay.png", cv2.IMREAD_UNCHANGED)
+
 (wH, wW) = overlayImg.shape[:2]
 (B, G, R, A) = cv2.split(overlayImg)
 B = cv2.bitwise_and(B, B, mask=A)
@@ -71,7 +68,7 @@ overlayImg = cv2.merge([B, G, R, A])
 # Setup camera
 stream = PiVideoStream(hf=True).start()
 normalDisplay = True
-sleep(5)
+sleep(2)
 
 # Turn on LED Ring
 colorWipe(strip, Color(255, 255, 255, 255), 0)

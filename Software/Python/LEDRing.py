@@ -4,16 +4,28 @@
 # Direct port of the Arduino NeoPixel library strandtest example.  Showcases
 # various animations on a strip of NeoPixels.
 import time
-
+import argparse
 from neopixel import *
 
+# Construct argument parser
+ap = argparse.ArgumentParser()
+ap.add_argument("-o", "--overlay", required=False,
+                help="path to overlay image")
+ap.add_argument("-a", "--alpha", type=float, default=0.85,
+                help="set alpha level (smaller = more transparent).\ndefault=0.85")
+ap.add_argument("-d", "--debug", type=int, default=0,
+                help="set flag equal to one (1) to enable debugging")
+ap.add_argument("-b", "--brightness", type=int, default=155,
+                help="set brightness level")
+args = vars(ap.parse_args())
+
 # LED strip configuration:
-LED_COUNT      = 30      # Number of LED pixels.
-LED_PIN        = 18      # GPIO pin connected to the pixels (must support PWM!).
-LED_FREQ_HZ    = 800000  # LED signal frequency in hertz (usually 800khz)
-LED_DMA        = 5       # DMA channel to use for generating signal (try 5)
-LED_BRIGHTNESS = 255     # Set to 0 for darkest and 255 for brightest
-LED_INVERT     = False   # True to invert the signal (when using NPN transistor level shift)
+LED_COUNT      = 30                     # Number of LED pixels.
+LED_PIN        = 18                     # GPIO pin connected to the pixels (must support PWM!).
+LED_FREQ_HZ    = 800000                 # LED signal frequency in hertz (usually 800khz)
+LED_DMA        = 5                      # DMA channel to use for generating signal (try 5)
+LED_BRIGHTNESS = args["brightness"]     # Set to 0 for darkest and 255 for brightest
+LED_INVERT     = False                  # True to invert the signal (when using NPN transistor level shift)
 LED_CHANNEL    = 0
 #LED_STRIP      = ws.SK6812_STRIP_RGBW	
 LED_STRIP      = ws.SK6812W_STRIP
