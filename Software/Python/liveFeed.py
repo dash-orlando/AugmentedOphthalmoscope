@@ -77,7 +77,7 @@ overlayImg = cv2.merge([B, G, R, A])
 # Setup camera
 stream = PiVideoStream(hf=True).start()
 normalDisplay = True
-sleep(.5)
+sleep(.2)
 
 # Turn on LED Ring
 #colorWipe(strip, Color(255, 255, 255, 255), 0)
@@ -90,15 +90,15 @@ cv2.setMouseCallback(ver, control)
 # Create a track bar for HoughCircles parameters
 cv2.createTrackbar("dp", ver, 9, 50, placeholder)
 cv2.createTrackbar("param2", ver, 43, 750, placeholder)
-cv2.createTrackbar("minRadius", ver, 3, 200, placeholder)
-cv2.createTrackbar("maxRadius", ver, 38, 250, placeholder)
+cv2.createTrackbar("minRadius", ver, 1, 200, placeholder)
+cv2.createTrackbar("maxRadius", ver, 16, 250, placeholder)
 
 
 # Infinite loop
 while True:
     
     # Get image from stream
-    frame = stream.read()
+    frame = stream.read()[46:322, 60:420]
     output = frame
     
     # Add a 4th dimension (Alpha) to the captured frame
@@ -164,6 +164,7 @@ while True:
                 output = cv2.addWeighted(overlay, args["alpha"], frame, 1.0, 0)
 
                 # If debug flag is invoked
+                args["debug"] = 1
                 if args["debug"] == 1:
                     # Draw circle
                     cv2.circle(output, (x,y),r,(0,255,0),4)
