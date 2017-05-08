@@ -23,7 +23,7 @@ $ sudo ./path/to/autoinstall.sh
 $ sudo nano /usr/local/lib/python2.7/dist-packages/imutils/video/pivideostream.py
 
   class PiVideoStream:
-          def __init__(self, resolution=(320, 240), framerate=32, vf=False, hf=False):
+          def __init__(self, resolution=(480, 368), framerate=32, vf=False, hf=False):
                   # initialize the camera and stream
                   self.camera = PiCamera()
                   self.camera.resolution = resolution
