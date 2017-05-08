@@ -3,16 +3,17 @@
 * USEFUL ARGUMENTS:
 *   -o/--overlay: Specify overlay file
 *   -a/--alpha: Specify transperancy level (0.0 - 1.0)
-*   -b/--brightness: LED brightness level (0 - 255)
+*   -d/--debug: toggle to enable debugging mode (DEVELOPER Only)
 *
-* VERSION: 0.9.1
-*   - Implemented routine to calculate distance from camera to eye.
+* VERSION: 0.9.2
+*   - Removed routine to calculate distance from camera to eye as it is not reliable.
+*   - Removed LED Ring and added a single LED light instead.
 *
 * KNOWN ISSUES:
-*   - Distance calculation are not very beuno.
+*   - Non atm!!
 *
 * AUTHOR: Mohammad Odeh
-*
+* UPDATED: May 8th, 2017
 * ----------------------------------------------------------
 * ----------------------------------------------------------
 *
@@ -20,128 +21,169 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.9.1"
+ver = "Live Feed Ver0.9.2"
 print __doc__
 
 # Import necessary modules
-from imutils.video.pivideostream import PiVideoStream
-from time import sleep
-from LEDRing import *
-import numpy
-import cv2
+import numpy, cv2, argparse
+import RPi.GPIO                     as GPIO
+from imutils.video.pivideostream    import PiVideoStream
+from time                           import sleep
+#from LEDRing                        import *
+
+#args["debug"] = 1
 
 
-###
+# ************************************************************************
+# CONSTRUCT ARGUMENT PARSER
+# ************************************************************************
+ap = argparse.ArgumentParser()
+ap.add_argument("-o", "--overlay", required=False,
+                help="path to overlay image")
+ap.add_argument("-a", "--alpha", type=float, default=0.85,
+                help="set alpha level (smaller = more transparent).\ndefault=0.85")
+ap.add_argument("-d", "--debug", action='store_true',
+                help="invoke flag to enable debugging")
+
+##Argument Parser for LED ring brightness (deprecated for the time being)
+##ap.add_argument("-b", "--brightness", type=int, default=50,
+##                help="set brightness level")
+
+args = vars(ap.parse_args())
+
+
+# ************************************************************************
+# DEFINE NECESSARY FUNCTIONS
+# ************************************************************************
+
+# *****===========*****===========***** #
 # Define right/left mouse click events
-###
-def control(event, x, y, flags, param):
+# *****===========*****===========***** #
+def control( event, x, y, flags, param ):
     global normalDisplay
+    
     # Right button shuts down program
     if event == cv2.EVENT_RBUTTONDOWN:
-        # Turn off LED Ring
-        colorWipe(strip, Color(0, 0, 0, 0), 0)
+        # Turn off LED
+##        colorWipe( strip, Color( 0, 0, 0, 0 ), 0 )
+        GPIO.output(LED,GPIO.LOW)
         stream.stop()
         cv2.destroyAllWindows()
         quit()
+        
     # Left button toggles display
     elif event == cv2.EVENT_LBUTTONDOWN:
-        normalDisplay=not(normalDisplay)
+        normalDisplay=not( normalDisplay )
 
-###
-# Define a placeholder function for trackbar
-# This is needed for the trackbars to function properly
-###
-def placeholder(x):
+
+# *****===========*****===========*****===========***** #
+# Define a placeholder function for trackbar. This is
+# needed for the trackbars to function properly.
+# *****===========*****===========*****===========***** #
+def placeholder( x ):
     pass
 
-###
-# Define function to calibrate camera by extracting dimensions from
-# a known image with known dimensions
-###
-def find_marker(image):
+# *****===========*****===========*****===========***** #
+# Define function to calibrate camera by extracting
+# dimensions from a known image with known dimensions
+# *****===========*****===========*****===========***** #
+def find_marker( image ):
     # Convert into grayscale because HoughCircle only accepts grayscale images
-    bgr2gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    bgr2gray = cv2.bilateralFilter(bgr2gray,11,17,17)
+    bgr2gray = cv2.cvtColor( image, cv2.COLOR_BGR2GRAY )
+    bgr2gray = cv2.bilateralFilter( bgr2gray,11,17,17 )
 
     # Threshold any color that is not black to white
-    retval, thresholded = cv2.threshold(bgr2gray, 20, 255, cv2.THRESH_BINARY)
+    retval, thresholded = cv2.threshold(bgr2gray, 20, 255, cv2.THRESH_BINARY )
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
-    bgr2gray = cv2.erode(cv2.dilate(thresholded, kernel, iterations=1), kernel, iterations=1)
+    kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
+    bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
 
-    cv2.imshow("calibrationTool", bgr2gray)
+    cv2.imshow( "calibrationTool", bgr2gray )
     
     # Find (in future update, the largest) circle outline
-    circles = cv2.HoughCircles(bgr2gray, cv2.HOUGH_GRADIENT, 14, 396,
-                               191, 43, 50, 85)
+    circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, 14, 396,
+                                191, 43, 50, 85 )
 
     if circles is not None:
-        circles = numpy.round(circles[0,:]).astype("int")
-        print("Shape: ")
-        print(circles.shape)
-        print("Array content: ")
-        print(circles)
-        for (x, y, r) in circles:
-            circle=(x,y,r)
-            return(x,y,r)
+        circles = numpy.round( circles[0,:] ).astype( "int" )
+        if args["debug"] is True:
+            print( "Shape: " + str( circles.shape ) )
+            print( "Array content: " + str( circles ) )
+        for ( x, y, r ) in circles:
+            circle = ( x, y, r )
+            return( x, y, r )
 
     else:
         return(0)
         
 
-###
+# *****===========*****===========*****===========*****===========***** #
 # Define function that returns distance from object to camera
-###
-def distance_to_camera(knownWidth, focalLength, perWidth):
+# *****===========*****===========*****===========*****===========***** #
+def distance_to_camera( knownWidth, focalLength, perWidth ):
     # Compute and return the distance from the object to the camera
-    return (knownWidth * focalLength) / perWidth
+    return ( knownWidth * focalLength ) / perWidth
 
-###
-# Setup and initialize needed aspects of the program on first run
-###
+
+# ************************************************************************
+# SETUP PROGRAM
+# ************************************************************************
+
+LED = 21
+GPIO.setmode(GPIO.BCM)
+GPIO.setwarnings(False)
+GPIO.setup(LED,GPIO.OUT)
+GPIO.output(LED,GPIO.HIGH)
 
 # Check whether an overlay is specified
-# Load overlay image with Alpha channel
 if args["overlay"] is not None:
-    overlayImg = cv2.imread(args["overlay"], cv2.IMREAD_UNCHANGED)
+    overlayImg = cv2.imread( args["overlay"], cv2.IMREAD_UNCHANGED )
 else:
-    overlayImg = cv2.imread("Overlay.png", cv2.IMREAD_UNCHANGED)
+    overlayImg = cv2.imread( "Overlay.png", cv2.IMREAD_UNCHANGED )
 
-(wH, wW) = overlayImg.shape[:2]
-(B, G, R, A) = cv2.split(overlayImg)
-B = cv2.bitwise_and(B, B, mask=A)
-G = cv2.bitwise_and(G, G, mask=A)
-R = cv2.bitwise_and(R, R, mask=A)
-overlayImg = cv2.merge([B, G, R, A])
+# Load overlay image with Alpha channel
+( wH, wW ) = overlayImg.shape[:2]
+( B, G, R, A ) = cv2.split( overlayImg )
+B = cv2.bitwise_and( B, B, mask=A )
+G = cv2.bitwise_and( G, G, mask=A )
+R = cv2.bitwise_and( R, R, mask=A )
+overlayImg = cv2.merge( [B, G, R, A] )
 
 # Setup camera
-stream = PiVideoStream(hf=True).start()
+stream = PiVideoStream( hf=True ).start()
 normalDisplay = True
-sleep(.2)
+sleep( 0.2 )
 
-# Turn on LED Ring
-#colorWipe(strip, Color(255, 255, 255, 255), 0)
-#colorWipe(strip, Color(0, 0, 0, 0), 0)
+### Turn on LED Ring
+##colorWipe(strip, Color(255, 255, 255, 255), 0)
+##colorWipe(strip, Color(0, 0, 0, 0), 0)
 
 # Setup window and mouseCallback event
-cv2.namedWindow(ver)
-cv2.setMouseCallback(ver, control)
+cv2.namedWindow( ver )
+cv2.setMouseCallback( ver, control )
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar("dp", ver, 9, 50, placeholder)
-cv2.createTrackbar("param2", ver, 43, 750, placeholder)
-cv2.createTrackbar("minRadius", ver, 1, 200, placeholder)
-cv2.createTrackbar("maxRadius", ver, 16, 250, placeholder)
+cv2.createTrackbar( "dp", ver, 9, 50, placeholder )
+cv2.createTrackbar( "param2", ver, 43, 750, placeholder )
+cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
+cv2.createTrackbar( "maxRadius", ver, 16, 250, placeholder )
 
-# Calibrate camera using a predefined scale for distance detection
-KNOWN_DISTANCE = 3.5
-KNOWN_WIDTH = 2
-image = cv2.imread("images/3.5inch.png")
-image = cv2.resize(image, (360,276))
-marker = find_marker(image)
-focalLength = (marker[2] * KNOWN_DISTANCE) / KNOWN_WIDTH
+# ************************************************************************
+# TEMPORARELY DEPRECATED
+# ************************************************************************
+### Calibrate camera using a predefined scale for distance detection
+##KNOWN_DISTANCE = 3.5
+##KNOWN_WIDTH = 2
+##image = cv2.imread( "images/3.5inch.png" )
+##image = cv2.resize( image, ( 360, 276 ) )
+##marker = find_marker( image )
+##focalLength = ( marker[2] * KNOWN_DISTANCE ) / KNOWN_WIDTH
 
-KNOWN_WIDTH = 0.4645669 #Average iris diameter
+#KNOWN_WIDTH = 0.4645669 #Average iris diameter
+
+# ************************************************************************
+# MAKE IT ALL HAPPEN
+# ************************************************************************
 
 # Infinite loop
 while True:
@@ -149,41 +191,35 @@ while True:
     # Get image from stream
     frame = stream.read()[46:322, 60:420]
     output = frame
-
-    # Get distance away from camera
-    marker = find_marker(output)
-    if marker is not 0:
-        inches = distance_to_camera(KNOWN_WIDTH, focalLength, marker[2])
-        mm = inches*25.4 #Get distance in millimeters
     
     # Add a 4th dimension (Alpha) to the captured frame
     (h, w) = frame.shape[:2]
-    frame = numpy.dstack([frame, numpy.ones((h, w), dtype="uint8") * 255])
+    frame = numpy.dstack( [frame, numpy.ones( ( h, w ), dtype="uint8" ) * 255] )
 
     # Create an overlay layer
-    overlay = numpy.zeros((h,w,4), "uint8")
+    overlay = numpy.zeros( ( h, w, 4 ), "uint8" )
     
     # Convert into grayscale because HoughCircle only accepts grayscale images
-    bgr2gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    bgr2gray = cv2.bilateralFilter(bgr2gray,11,17,17)
+    bgr2gray = cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY )
+    bgr2gray = cv2.bilateralFilter( bgr2gray, 11, 17, 17 )
 
     # Threshold any color that is not black to white
-    retval, thresholded = cv2.threshold(bgr2gray, 20, 255, cv2.THRESH_BINARY)
+    retval, thresholded = cv2.threshold( bgr2gray, 20, 255, cv2.THRESH_BINARY )
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
-    bgr2gray = cv2.erode(cv2.dilate(thresholded, kernel, iterations=1), kernel, iterations=1)
+    kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
+    bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
 
     
     # Get trackbar position and reflect it in HoughCircles parameters input
-    dp = cv2.getTrackbarPos("dp", ver)
-    param2 = cv2.getTrackbarPos("param2", ver)
-    minRadius = cv2.getTrackbarPos("minRadius", ver)
-    maxRadius = cv2.getTrackbarPos("maxRadius", ver)
+    dp = cv2.getTrackbarPos( "dp", ver )
+    param2 = cv2.getTrackbarPos( "param2", ver )
+    minRadius = cv2.getTrackbarPos( "minRadius", ver )
+    maxRadius = cv2.getTrackbarPos( "maxRadius", ver )
     
     
     # Scan for circles
-    circles = cv2.HoughCircles(bgr2gray, cv2.HOUGH_GRADIENT, dp, 396,
-                               191, param2, minRadius, maxRadius)
+    circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, dp, 396,
+                                191, param2, minRadius, maxRadius )
 
     '''
     Experimental values:            Original Values:
@@ -197,12 +233,26 @@ while True:
 
     # If circles are found draw them
     if circles is not None:
-        circles = numpy.round(circles[0,:]).astype("int")
-        for (x, y, r) in circles:
+        circles = numpy.round( circles[0,:] ).astype( "int" )
+        for ( x, y, r ) in circles:
+
+            # ************************************************************************
+            # TEMPORARELY DEPRECATED
+            # ************************************************************************
+            
+##            # Get distance away from camera
+##            marker = find_marker( output.copy() )
+##            
+##            if marker is not 0:
+##                KNOWN_WIDTH = (2*r)/96.0
+##                if args["debug"] is True:
+##                    print( "Detected Width: %.2f" %KNOWN_WIDTH )
+##                inches = distance_to_camera( KNOWN_WIDTH, focalLength, marker[2] )
+##                mm = inches*25.4 #Get distance in millimeters
 
             # Resize watermark image
-            resized = cv2.resize(overlayImg, (2*r, 2*r),
-                         interpolation = cv2.INTER_AREA)
+            resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
+                                  interpolation = cv2.INTER_AREA )
 
             # Retrieve overlay location
             y1 = y-r
@@ -216,16 +266,15 @@ while True:
                 overlay[y1:y2,x1:x2]=resized
 
                 # Join overlay with live feed and apply specified transparency level
-                output = cv2.addWeighted(overlay, args["alpha"], frame, 1.0, 0)
+                output = cv2.addWeighted( overlay, args["alpha"], frame, 1.0, 0 )
 
                 # If debug flag is invoked
-                args["debug"] = 1
-                if args["debug"] == 1:
+                if args["debug"] is True:
                     # Draw circle
-                    cv2.circle(output, (x,y),r,(0,255,0),4)
-                    cv2.putText(output, "%.2fmm" % (mm),
-                           (output.shape[1] - 150, output.shape[0] - 15), cv2.FONT_HERSHEY_SIMPLEX,
-                            1.0, (0, 255, 0), 3)
+                    cv2.circle( output, ( x, y ), r, ( 0, 255, 0 ), 4 )
+                    cv2.putText( output, "%.2fmm" % ( mm ),
+                                 ( output.shape[1] - 150, output.shape[0] - 15 ),
+                                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, ( 0, 255, 0 ), 3 )
         
             # If not within window resolution keep looking
             else:
@@ -234,15 +283,17 @@ while True:
     # Live feed display toggle
     if normalDisplay:
         cv2.imshow(ver, output)
+        cv2.imshow( "calibrationTool", bgr2gray )
         key = cv2.waitKey(1) & 0xFF
     elif not(normalDisplay):
         cv2.imshow(ver, bgr2gray)
         key = cv2.waitKey(1) & 0xFF
 
 
-###
-# Deprecated
-###
+
+# ************************************************************************
+# DEPRECATED
+# ************************************************************************
 
 '''
 bgr2gray = cv2.erode(cv2.dilate(thresholded, kernel, iterations=1), kernel, iterations=1)
