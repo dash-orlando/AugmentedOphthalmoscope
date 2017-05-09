@@ -3,11 +3,10 @@
 * USEFUL ARGUMENTS:
 *   -o/--overlay: Specify overlay file
 *   -a/--alpha: Specify transperancy level (0.0 - 1.0)
-*   -d/--debug: toggle to enable debugging mode (DEVELOPER Only)
+*   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY)
 *
-* VERSION: 0.9.2
-*   - Removed routine to calculate distance from camera to eye as it is not reliable.
-*   - Removed LED Ring and added a single LED light instead.
+* VERSION: 0.9.3
+*   - Changed a couple of parameters that improved detection accuracy
 *
 * KNOWN ISSUES:
 *   - Non atm!!
@@ -21,7 +20,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.9.2"
+ver = "Live Feed Ver0.9.3"
 print __doc__
 
 # Import necessary modules
@@ -56,9 +55,9 @@ args = vars(ap.parse_args())
 # DEFINE NECESSARY FUNCTIONS
 # ************************************************************************
 
-# *****===========*****===========***** #
+# *************************************
 # Define right/left mouse click events
-# *****===========*****===========***** #
+# *************************************
 def control( event, x, y, flags, param ):
     global normalDisplay
     
@@ -76,53 +75,12 @@ def control( event, x, y, flags, param ):
         normalDisplay=not( normalDisplay )
 
 
-# *****===========*****===========*****===========***** #
+# ****************************************************
 # Define a placeholder function for trackbar. This is
 # needed for the trackbars to function properly.
-# *****===========*****===========*****===========***** #
+# ****************************************************
 def placeholder( x ):
     pass
-
-# *****===========*****===========*****===========***** #
-# Define function to calibrate camera by extracting
-# dimensions from a known image with known dimensions
-# *****===========*****===========*****===========***** #
-def find_marker( image ):
-    # Convert into grayscale because HoughCircle only accepts grayscale images
-    bgr2gray = cv2.cvtColor( image, cv2.COLOR_BGR2GRAY )
-    bgr2gray = cv2.bilateralFilter( bgr2gray,11,17,17 )
-
-    # Threshold any color that is not black to white
-    retval, thresholded = cv2.threshold(bgr2gray, 20, 255, cv2.THRESH_BINARY )
-
-    kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
-    bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
-
-    cv2.imshow( "calibrationTool", bgr2gray )
-    
-    # Find (in future update, the largest) circle outline
-    circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, 14, 396,
-                                191, 43, 50, 85 )
-
-    if circles is not None:
-        circles = numpy.round( circles[0,:] ).astype( "int" )
-        if args["debug"] is True:
-            print( "Shape: " + str( circles.shape ) )
-            print( "Array content: " + str( circles ) )
-        for ( x, y, r ) in circles:
-            circle = ( x, y, r )
-            return( x, y, r )
-
-    else:
-        return(0)
-        
-
-# *****===========*****===========*****===========*****===========***** #
-# Define function that returns distance from object to camera
-# *****===========*****===========*****===========*****===========***** #
-def distance_to_camera( knownWidth, focalLength, perWidth ):
-    # Compute and return the distance from the object to the camera
-    return ( knownWidth * focalLength ) / perWidth
 
 
 # ************************************************************************
@@ -152,7 +110,7 @@ overlayImg = cv2.merge( [B, G, R, A] )
 # Setup camera
 stream = PiVideoStream( hf=True ).start()
 normalDisplay = True
-sleep( 0.2 )
+sleep( 1.0 )
 
 ### Turn on LED Ring
 ##colorWipe(strip, Color(255, 255, 255, 255), 0)
@@ -165,21 +123,9 @@ cv2.setMouseCallback( ver, control )
 # Create a track bar for HoughCircles parameters
 cv2.createTrackbar( "dp", ver, 9, 50, placeholder )
 cv2.createTrackbar( "param2", ver, 43, 750, placeholder )
-cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
-cv2.createTrackbar( "maxRadius", ver, 16, 250, placeholder )
+cv2.createTrackbar( "minRadius", ver, 10, 200, placeholder )
+cv2.createTrackbar( "maxRadius", ver, 30, 250, placeholder )
 
-# ************************************************************************
-# TEMPORARELY DEPRECATED
-# ************************************************************************
-### Calibrate camera using a predefined scale for distance detection
-##KNOWN_DISTANCE = 3.5
-##KNOWN_WIDTH = 2
-##image = cv2.imread( "images/3.5inch.png" )
-##image = cv2.resize( image, ( 360, 276 ) )
-##marker = find_marker( image )
-##focalLength = ( marker[2] * KNOWN_DISTANCE ) / KNOWN_WIDTH
-
-#KNOWN_WIDTH = 0.4645669 #Average iris diameter
 
 # ************************************************************************
 # MAKE IT ALL HAPPEN
@@ -204,7 +150,7 @@ while True:
     bgr2gray = cv2.bilateralFilter( bgr2gray, 11, 17, 17 )
 
     # Threshold any color that is not black to white
-    retval, thresholded = cv2.threshold( bgr2gray, 20, 255, cv2.THRESH_BINARY )
+    retval, thresholded = cv2.threshold( bgr2gray, 60, 158, cv2.THRESH_BINARY )
 
     kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
     bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
@@ -223,32 +169,18 @@ while True:
 
     '''
     Experimental values:            Original Values:
-    dp = 9                          dp = 12
+    dp = 9                          dp = 9
     minDist = 396                   minDist = 396
     param1 = 191                    param1 = 191
-    param2 = 43                     param2 = 199
-    minRadius = 20                  minRadius = 5
-    maxRadius = 70                  maxRadius = 70
+    param2 = 43                     param2 = 43
+    minRadius = 10                  minRadius = 1
+    maxRadius = 30                  maxRadius = 16
     '''
 
     # If circles are found draw them
     if circles is not None:
         circles = numpy.round( circles[0,:] ).astype( "int" )
         for ( x, y, r ) in circles:
-
-            # ************************************************************************
-            # TEMPORARELY DEPRECATED
-            # ************************************************************************
-            
-##            # Get distance away from camera
-##            marker = find_marker( output.copy() )
-##            
-##            if marker is not 0:
-##                KNOWN_WIDTH = (2*r)/96.0
-##                if args["debug"] is True:
-##                    print( "Detected Width: %.2f" %KNOWN_WIDTH )
-##                inches = distance_to_camera( KNOWN_WIDTH, focalLength, marker[2] )
-##                mm = inches*25.4 #Get distance in millimeters
 
             # Resize watermark image
             resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
@@ -272,9 +204,9 @@ while True:
                 if args["debug"] is True:
                     # Draw circle
                     cv2.circle( output, ( x, y ), r, ( 0, 255, 0 ), 4 )
-                    cv2.putText( output, "%.2fmm" % ( mm ),
-                                 ( output.shape[1] - 150, output.shape[0] - 15 ),
-                                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, ( 0, 255, 0 ), 3 )
+##                    cv2.putText( output, "%.2fmm" % ( mm ),
+##                                 ( output.shape[1] - 150, output.shape[0] - 15 ),
+##                                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, ( 0, 255, 0 ), 3 )
         
             # If not within window resolution keep looking
             else:
@@ -318,4 +250,91 @@ threshold = cv2.adaptiveThreshold(blur,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                   cv2.THRESH_BINARY,11,3.5)
 
 # Scan for circles
+
+------------------------------------------------------------------------
+
+# ****************************************************
+# Define function to calibrate camera by extracting
+# dimensions from a known image with known dimensions
+# ****************************************************
+def find_marker( image ):
+    # Convert into grayscale because HoughCircle only accepts grayscale images
+    bgr2gray = cv2.cvtColor( image, cv2.COLOR_BGR2GRAY )
+    bgr2gray = cv2.bilateralFilter( bgr2gray,11,17,17 )
+
+    # Threshold any color that is not black to white
+    retval, thresholded = cv2.threshold(bgr2gray, 180, 255, cv2.THRESH_BINARY )
+
+    kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
+    bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
+
+    cv2.imshow( "calibrationTool", bgr2gray )
+    
+    # Find (in future update, the largest) circle outline
+    circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, 14, 396,
+                                191, 43, 50, 85 )
+
+    if circles is not None:
+        circles = numpy.round( circles[0,:] ).astype( "int" )
+        if args["debug"] is True:
+            print( "Shape: " + str( circles.shape ) )
+            print( "Array content: " + str( circles ) )
+        for ( x, y, r ) in circles:
+            circle = ( x, y, r )
+            return( x, y, r )
+
+    else:
+        return(0)
+        
+
+# ************************************************************************
+# Define function that returns distance from object to camera
+# ************************************************************************
+def distance_to_camera( knownWidth, focalLength, perWidth ):
+    # Compute and return the distance from the object to the camera
+    return ( knownWidth * focalLength ) / perWidth
+
+--------------------------------------------------------------------------
+
+cv2.createTrackbar( "maxRadius", ver, 30, 250, placeholder )
+
+# ************************************************************************
+# TEMPORARELY DEPRECATED
+# ************************************************************************
+### Calibrate camera using a predefined scale for distance detection
+##KNOWN_DISTANCE = 3.5
+##KNOWN_WIDTH = 2
+##image = cv2.imread( "images/3.5inch.png" )
+##image = cv2.resize( image, ( 360, 276 ) )
+##marker = find_marker( image )
+##focalLength = ( marker[2] * KNOWN_DISTANCE ) / KNOWN_WIDTH
+
+#KNOWN_WIDTH = 0.4645669 #Average iris diameter
+
+# ************************************************************************
+# MAKE IT ALL HAPPEN
+# ************************************************************************
+
+--------------------------------------------------------------------------
+
+for ( x, y, r ) in circles:
+
+            # ************************************************************************
+            # TEMPORARELY DEPRECATED
+            # ************************************************************************
+            
+##            # Get distance away from camera
+##            marker = find_marker( output.copy() )
+##            
+##            if marker is not 0:
+##                KNOWN_WIDTH = (2*r)/96.0
+##                if args["debug"] is True:
+##                    print( "Detected Width: %.2f" %KNOWN_WIDTH )
+##                inches = distance_to_camera( KNOWN_WIDTH, focalLength, marker[2] )
+##                mm = inches*25.4 #Get distance in millimeters
+
+            # Resize watermark image
+            resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
+                                  interpolation = cv2.INTER_AREA )
+
 '''
