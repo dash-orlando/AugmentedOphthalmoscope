@@ -5,8 +5,11 @@
 *   -a/--alpha: Specify transperancy level (0.0 - 1.0)
 *   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY)
 *
-* VERSION: 0.9.3
-*   - Changed a couple of parameters that improved detection accuracy
+* VERSION: 0.9.4
+*   - Minor code restructuring and cleanup
+*   - Added a benchmark tool
+*   - Increased FPS from 6 to 7.5, a marginal 25% improvement
+*   - Added error handling so the program doesn't crash as often
 *
 * KNOWN ISSUES:
 *   - Non atm!!
@@ -24,19 +27,20 @@ ver = "Live Feed Ver0.9.3"
 print __doc__
 
 # Import necessary modules
-import numpy, cv2, argparse
-import RPi.GPIO                     as GPIO
-from imutils.video.pivideostream    import PiVideoStream
-from time                           import sleep
-#from LEDRing                        import *
-
-#args["debug"] = 1
-
+import  numpy, cv2, argparse                                # Various Stuff
+import  RPi.GPIO                    as      GPIO            # GPIO pins for peripherals (i.e LED)
+from    imutils.video.pivideostream import  PiVideoStream   # Import threaded PiCam module
+from    time                        import  sleep           # Sleep for stability
+from    threading                   import  Thread          # Used to thread processes
+from    Queue                       import  Queue           # Used to queue input/output
+from    timeStamp                   import  fullStamp       # Show date/time on console output
+from    imutils.video               import  FPS             # Benchmark FPS
 
 # ************************************************************************
-# CONSTRUCT ARGUMENT PARSER
+# =====================> CONSTRUCT ARGUMENT PARSER <=====================
 # ************************************************************************
 ap = argparse.ArgumentParser()
+
 ap.add_argument("-o", "--overlay", required=False,
                 help="path to overlay image")
 ap.add_argument("-a", "--alpha", type=float, default=0.85,
@@ -44,15 +48,11 @@ ap.add_argument("-a", "--alpha", type=float, default=0.85,
 ap.add_argument("-d", "--debug", action='store_true',
                 help="invoke flag to enable debugging")
 
-##Argument Parser for LED ring brightness (deprecated for the time being)
-##ap.add_argument("-b", "--brightness", type=int, default=50,
-##                help="set brightness level")
-
-args = vars(ap.parse_args())
+args = vars( ap.parse_args() )
 
 
 # ************************************************************************
-# DEFINE NECESSARY FUNCTIONS
+# =====================> DEFINE NECESSARY FUNCTIONS <=====================
 # ************************************************************************
 
 # *************************************
@@ -64,8 +64,10 @@ def control( event, x, y, flags, param ):
     # Right button shuts down program
     if event == cv2.EVENT_RBUTTONDOWN:
         # Turn off LED
-##        colorWipe( strip, Color( 0, 0, 0, 0 ), 0 )
-        GPIO.output(LED,GPIO.LOW)
+        GPIO.output( LED, GPIO.LOW )
+        fps.stop()
+        print( fullStamp() + " [INFO] Elapsed time: {:.2f}".format(fps.elapsed()) )
+        print( fullStamp() + " [INFO] Approx. FPS : {:.2f}".format(fps.fps()) )
         stream.stop()
         cv2.destroyAllWindows()
         quit()
@@ -83,10 +85,88 @@ def placeholder( x ):
     pass
 
 
+# ****************************************************
+# Define a placeholder function for trackbar. This is
+# needed for the trackbars to function properly.
+# ****************************************************
+def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
+
+    # Error handling in case a non-allowable integer is chosen (1)
+    try:
+        # Scan for circles
+        circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, dp, 396,
+                                    191, param2, minRadius, maxRadius )
+
+        '''
+        Experimental values:            Original Values:
+        dp = 9                          dp = 9
+        minDist = 396                   minDist = 396
+        param1 = 191                    param1 = 191
+        param2 = 43                     param2 = 43
+        minRadius = 10                  minRadius = 1
+        maxRadius = 30                  maxRadius = 16
+        '''
+    
+    # Error handling in case a non-allowable integer is chosen (2)
+    except Exception as instance:
+        print( fullStamp() + " Exception or Error Caught" )
+        print( fullStamp() + " Error Type" + str(type(instance)) )
+        print( fullStamp() + " Error Arguments " + str( instance.arg ) + "\n" )
+        print( fullStamp() + " Resetting ALL trackbars..." )
+
+        # Reset trackbars
+        cv2.createTrackbar( "dp", ver, 9, 50, placeholder )
+        cv2.createTrackbar( "param2", ver, 43, 750, placeholder )
+        cv2.createTrackbar( "minRadius", ver, 10, 200, placeholder )
+        cv2.createTrackbar( "maxRadius", ver, 30, 250, placeholder )
+
+        print( fullStamp() + " Success\n" )
+
+        # Exit function and re-loop
+        return()
+
+    # If circles are found draw them
+    if circles is not None:
+        circles = numpy.round( circles[0,:] ).astype( "int" )
+        for ( x, y, r ) in circles:
+
+            # Resize watermark image
+            resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
+                                  interpolation = cv2.INTER_AREA )
+
+            # Retrieve overlay location
+            y1 = y-r
+            y2 = y+r
+            x1 = x-r
+            x2 = x+r
+
+            # Check whether overlay location is within window resolution
+            if x1>0 and x1<w and x2>0 and x2<w and y1>0 and y1<h and y2>0 and y2<h:
+                # Place overlay image inside circle
+                overlay[ y1:y2, x1:x2 ] = resized
+
+                # Join overlay with live feed and apply specified transparency level
+                output = cv2.addWeighted( overlay, args["alpha"], frame, 1.0, 0 )
+
+                # If debug flag is invoked
+                if args["debug"] is True:
+                    # Draw circle
+                    cv2.circle( output, ( x, y ), r, ( 0, 255, 0 ), 4 )
+        
+            # If not within window resolution keep looking
+            else:
+                output = frame
+
+            # Place output in queue for retrieval by main thread
+            if Q.full() is False:
+                Q.put( output )
+
+
 # ************************************************************************
-# SETUP PROGRAM
+# ===========================> SETUP PROGRAM <===========================
 # ************************************************************************
 
+# Setup GPIO pins and turn on LED
 LED = 21
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
@@ -112,10 +192,6 @@ stream = PiVideoStream( hf=True ).start()
 normalDisplay = True
 sleep( 1.0 )
 
-### Turn on LED Ring
-##colorWipe(strip, Color(255, 255, 255, 255), 0)
-##colorWipe(strip, Color(0, 0, 0, 0), 0)
-
 # Setup window and mouseCallback event
 cv2.namedWindow( ver )
 cv2.setMouseCallback( ver, control )
@@ -126,10 +202,15 @@ cv2.createTrackbar( "param2", ver, 43, 750, placeholder )
 cv2.createTrackbar( "minRadius", ver, 10, 200, placeholder )
 cv2.createTrackbar( "maxRadius", ver, 30, 250, placeholder )
 
+# Create a queue for retrieving data from thread
+Q = Queue( maxsize=0 )
 
 # ************************************************************************
-# MAKE IT ALL HAPPEN
+# =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
+
+# Start benchmark
+fps = FPS().start()
 
 # Infinite loop
 while True:
@@ -162,69 +243,30 @@ while True:
     minRadius = cv2.getTrackbarPos( "minRadius", ver )
     maxRadius = cv2.getTrackbarPos( "maxRadius", ver )
     
-    
-    # Scan for circles
-    circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, dp, 396,
-                                191, param2, minRadius, maxRadius )
+    # Start thread to scan for circles
+    t = Thread( target=scan4circles, args=( bgr2gray, overlay, overlayImg, frame, Q ) )
+    t.daemon = True
+    t.start()
 
-    '''
-    Experimental values:            Original Values:
-    dp = 9                          dp = 9
-    minDist = 396                   minDist = 396
-    param1 = 191                    param1 = 191
-    param2 = 43                     param2 = 43
-    minRadius = 10                  minRadius = 1
-    maxRadius = 30                  maxRadius = 16
-    '''
-
-    # If circles are found draw them
-    if circles is not None:
-        circles = numpy.round( circles[0,:] ).astype( "int" )
-        for ( x, y, r ) in circles:
-
-            # Resize watermark image
-            resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
-                                  interpolation = cv2.INTER_AREA )
-
-            # Retrieve overlay location
-            y1 = y-r
-            y2 = y+r
-            x1 = x-r
-            x2 = x+r
-
-            # Check whether overlay location is within window resolution
-            if x1>0 and x1<w and x2>0 and x2<w and y1>0 and y1<h and y2>0 and y2<h:
-                # Place overlay image inside circle
-                overlay[y1:y2,x1:x2]=resized
-
-                # Join overlay with live feed and apply specified transparency level
-                output = cv2.addWeighted( overlay, args["alpha"], frame, 1.0, 0 )
-
-                # If debug flag is invoked
-                if args["debug"] is True:
-                    # Draw circle
-                    cv2.circle( output, ( x, y ), r, ( 0, 255, 0 ), 4 )
-##                    cv2.putText( output, "%.2fmm" % ( mm ),
-##                                 ( output.shape[1] - 150, output.shape[0] - 15 ),
-##                                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, ( 0, 255, 0 ), 3 )
-        
-            # If not within window resolution keep looking
-            else:
-                output = frame
+    # Check if queue has something available for retrieval
+    if Q.qsize() > 0:
+        output = Q.get()
     
     # Live feed display toggle
     if normalDisplay:
         cv2.imshow(ver, output)
-        cv2.imshow( "calibrationTool", bgr2gray )
+        cv2.imshow( "AI_View", bgr2gray )
         key = cv2.waitKey(1) & 0xFF
+        fps.update()
     elif not(normalDisplay):
         cv2.imshow(ver, bgr2gray)
         key = cv2.waitKey(1) & 0xFF
+        fps.update()
 
 
 
 # ************************************************************************
-# DEPRECATED
+# =============================> DEPRECATED <=============================
 # ************************************************************************
 
 '''
