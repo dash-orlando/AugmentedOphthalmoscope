@@ -3,7 +3,7 @@
 * USEFUL ARGUMENTS:
 *   -o/--overlay: Specify overlay file
 *   -a/--alpha: Specify transperancy level (0.0 - 1.0)
-*   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY)
+*   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY!!!)
 *
 * VERSION: 0.9.4
 *   - Minor code restructuring and cleanup
@@ -23,7 +23,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.9.3"
+ver = "Live Feed Ver0.9.4"
 print __doc__
 
 # Import necessary modules
@@ -63,11 +63,14 @@ def control( event, x, y, flags, param ):
     
     # Right button shuts down program
     if event == cv2.EVENT_RBUTTONDOWN:
+        # If debug flag is invoked
+        if args["debug"]:
+            fps.stop()
+            print( fullStamp() + " [INFO] Elapsed time: {:.2f}".format(fps.elapsed()) )
+            print( fullStamp() + " [INFO] Approx. FPS : {:.2f}".format(fps.fps()) )
+
         # Turn off LED
         GPIO.output( LED, GPIO.LOW )
-        fps.stop()
-        print( fullStamp() + " [INFO] Elapsed time: {:.2f}".format(fps.elapsed()) )
-        print( fullStamp() + " [INFO] Approx. FPS : {:.2f}".format(fps.fps()) )
         stream.stop()
         cv2.destroyAllWindows()
         quit()
@@ -85,10 +88,9 @@ def placeholder( x ):
     pass
 
 
-# ****************************************************
-# Define a placeholder function for trackbar. This is
-# needed for the trackbars to function properly.
-# ****************************************************
+# ******************************************************
+# Define a function to scan for circles from camera feed
+# ******************************************************
 def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
 
     # Error handling in case a non-allowable integer is chosen (1)
@@ -149,7 +151,7 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
                 output = cv2.addWeighted( overlay, args["alpha"], frame, 1.0, 0 )
 
                 # If debug flag is invoked
-                if args["debug"] is True:
+                if args["debug"]:
                     # Draw circle
                     cv2.circle( output, ( x, y ), r, ( 0, 255, 0 ), 4 )
         
@@ -188,7 +190,7 @@ R = cv2.bitwise_and( R, R, mask=A )
 overlayImg = cv2.merge( [B, G, R, A] )
 
 # Setup camera
-stream = PiVideoStream( hf=True ).start()
+stream = PiVideoStream( resolution=(384, 288), hf=True ).start()
 normalDisplay = True
 sleep( 1.0 )
 
@@ -205,18 +207,22 @@ cv2.createTrackbar( "maxRadius", ver, 30, 250, placeholder )
 # Create a queue for retrieving data from thread
 Q = Queue( maxsize=0 )
 
+# If debug flag is invoked
+if args["debug"]:
+    print( fullStamp() + " [INFO] Debug Mode: ON" )
+    # Start benchmark
+    fps = FPS().start()
+
+
 # ************************************************************************
 # =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
-
-# Start benchmark
-fps = FPS().start()
 
 # Infinite loop
 while True:
     
     # Get image from stream
-    frame = stream.read()[46:322, 60:420]
+    frame = stream.read()[36:252, 48:336]#[46:322, 60:420]
     output = frame
     
     # Add a 4th dimension (Alpha) to the captured frame
@@ -235,7 +241,6 @@ while True:
 
     kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
     bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
-
     
     # Get trackbar position and reflect it in HoughCircles parameters input
     dp = cv2.getTrackbarPos( "dp", ver )
@@ -251,18 +256,19 @@ while True:
     # Check if queue has something available for retrieval
     if Q.qsize() > 0:
         output = Q.get()
-    
+
+    # If debug flag is invoked
+    if args["debug"]:
+       fps.update()
+
     # Live feed display toggle
     if normalDisplay:
         cv2.imshow(ver, output)
         cv2.imshow( "AI_View", bgr2gray )
         key = cv2.waitKey(1) & 0xFF
-        fps.update()
     elif not(normalDisplay):
         cv2.imshow(ver, bgr2gray)
         key = cv2.waitKey(1) & 0xFF
-        fps.update()
-
 
 
 # ************************************************************************
