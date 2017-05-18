@@ -5,17 +5,18 @@
 *   -a/--alpha: Specify transperancy level (0.0 - 1.0)
 *   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY!!!)
 *
-* VERSION: 0.9.5
-*   - Added threads to distribute workload. Program now uses ~90% of
+* VERSION: 0.9.5.1
+*   - Added threads to distribute workload. Program now uses ~70% of
 *     CPU power instead of ~30%
-*   - Increased FPS from 7.5 to 24, a whooping 320% improvement!!!
+*   - Increased FPS from 7.5 to 35, a whooping 467% improvement!!!
+*   - Added trackbars to change thresholding method and parameters mid-session
 *
 * KNOWN ISSUES:
 *   - Overlay is lagging the output image (aka circle is moved to
 *     the left, overlay moves to the left half a second later)
 *
 * AUTHOR: Mohammad Odeh
-* UPDATED: May 8th, 2017
+* UPDATED: May 18th, 2017
 * ----------------------------------------------------------
 * ----------------------------------------------------------
 *
@@ -23,7 +24,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.9.5"
+ver = "Live Feed Ver0.9.5.1"
 print __doc__
 
 # Import necessary modules
@@ -50,7 +51,7 @@ ap.add_argument("-d", "--debug", action='store_true',
 
 args = vars( ap.parse_args() )
 
-
+args["debug"] = True
 # ************************************************************************
 # =====================> DEFINE NECESSARY FUNCTIONS <=====================
 # ************************************************************************
@@ -93,11 +94,28 @@ def placeholder( x ):
 # ****************************************************
 def procFrame(bgr2gray, Q_procFrame):
 
+    # Get trackbar position and reflect it threshold type and values
+    threshType = cv2.getTrackbarPos( "Type:\n0.Binary\n1.BinaryInv\n2.Trunc\n3.2_0\n4.2_0Inv",
+                    "AI_View")
+    threshold = cv2.getTrackbarPos( "threshold", "AI_View")
+    maxValue = cv2.getTrackbarPos( "maxValue", "AI_View")
+
     # Dissolve noise while maintaining edge sharpness 
-    bgr2gray = cv2.bilateralFilter( bgr2gray, 11, 17, 17 )
-    
-    # Threshold any color that is not black to white
-    retval, thresholded = cv2.threshold( bgr2gray, 60, 158, cv2.THRESH_BINARY )
+    #bgr2gray = cv2.bilateralFilter( bgr2gray, 11, 17, 17 )
+    bgr2gray = cv2.bilateralFilter( bgr2gray, 5, 17, 17 )
+
+    if threshType == 0:
+        # Threshold any color that is not black to white
+        #retval, thresholded = cv2.threshold( bgr2gray, 60, 158, cv2.THRESH_BINARY )
+        retval, thresholded = cv2.threshold( bgr2gray, threshold, maxValue, cv2.THRESH_BINARY )
+    elif threshType == 1:
+        retval, thresholded = cv2.threshold( bgr2gray, threshold, maxValue, cv2.THRESH_BINARY_INV )
+    elif threshType == 2:
+        retval, thresholded = cv2.threshold( bgr2gray, threshold, maxValue, cv2.THRESH_TRUNC )
+    elif threshType == 3:
+        retval, thresholded = cv2.threshold( bgr2gray, threshold, maxValue, cv2.THRESH_TOZERO )
+    elif threshType == 4:
+        retval, thresholded = cv2.threshold( bgr2gray, threshold, maxValue, cv2.THRESH_TOZERO_INV )
 
     kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
     bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
@@ -126,61 +144,60 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
         minRadius = 10                  minRadius = 1
         maxRadius = 30                  maxRadius = 16
         '''
-    
+
+        # If circles are found draw them
+        if circles is not None:
+            circles = numpy.round( circles[0,:] ).astype( "int" )
+            for ( x, y, r ) in circles:
+
+                # Resize watermark image
+                resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
+                                      interpolation = cv2.INTER_AREA )
+
+                # Retrieve overlay location
+                y1 = y-r
+                y2 = y+r
+                x1 = x-r
+                x2 = x+r
+
+                # Check whether overlay location is within window resolution
+                if x1>0 and x1<w and x2>0 and x2<w and y1>0 and y1<h and y2>0 and y2<h:
+                    # Place overlay image inside circle
+                    overlay[ y1:y2, x1:x2 ] = resized
+
+                    # Join overlay with live feed and apply specified transparency level
+                    output = cv2.addWeighted( overlay, args["alpha"], frame, 1.0, 0 )
+
+                    # If debug flag is invoked
+                    if args["debug"]:
+                        # Draw circle
+                        cv2.circle( output, ( x, y ), r, ( 0, 255, 0 ), 4 )
+            
+                # If not within window resolution keep looking
+                else:
+                    output = frame
+
+                # Place output in queue for retrieval by main thread
+                if Q_scan4circles.full() is False:
+                    Q_scan4circles.put( output )
+
     # Error handling in case a non-allowable integer is chosen (2)
     except Exception as instance:
         print( fullStamp() + " Exception or Error Caught" )
-        print( fullStamp() + " Error Type" + str(type(instance)) )
-        print( fullStamp() + " Error Arguments " + str( instance.arg ) + "\n" )
+        print( fullStamp() + " Error Type" + str(type(instance)) + "\n")
+        #print( fullStamp() + " Error Arguments " + str( instance.arg ) + "\n" )
         print( fullStamp() + " Resetting ALL trackbars..." )
 
         # Reset trackbars
-        cv2.createTrackbar( "dp", ver, 9, 50, placeholder )
-        cv2.createTrackbar( "param2", ver, 43, 750, placeholder )
-        cv2.createTrackbar( "minRadius", ver, 10, 200, placeholder )
-        cv2.createTrackbar( "maxRadius", ver, 30, 250, placeholder )
+        cv2.createTrackbar( "dp", ver, 14, 50, placeholder )
+        cv2.createTrackbar( "param2", ver, 143, 750, placeholder )
+        cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
+        cv2.createTrackbar( "maxRadius", ver, 16, 250, placeholder )
 
         print( fullStamp() + " Success\n" )
 
         # Exit function and re-loop
-        return()
-
-    # If circles are found draw them
-    if circles is not None:
-        circles = numpy.round( circles[0,:] ).astype( "int" )
-        for ( x, y, r ) in circles:
-
-            # Resize watermark image
-            resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
-                                  interpolation = cv2.INTER_AREA )
-
-            # Retrieve overlay location
-            y1 = y-r
-            y2 = y+r
-            x1 = x-r
-            x2 = x+r
-
-            # Check whether overlay location is within window resolution
-            if x1>0 and x1<w and x2>0 and x2<w and y1>0 and y1<h and y2>0 and y2<h:
-                # Place overlay image inside circle
-                overlay[ y1:y2, x1:x2 ] = resized
-
-                # Join overlay with live feed and apply specified transparency level
-                output = cv2.addWeighted( overlay, args["alpha"], frame, 1.0, 0 )
-
-                # If debug flag is invoked
-                if args["debug"]:
-                    # Draw circle
-                    cv2.circle( output, ( x, y ), r, ( 0, 255, 0 ), 4 )
-        
-            # If not within window resolution keep looking
-            else:
-                output = frame
-
-            # Place output in queue for retrieval by main thread
-            if Q.full() is False:
-                Q.put( output )
-
+        #return()
 
 # ************************************************************************
 # ===========================> SETUP PROGRAM <===========================
@@ -208,7 +225,7 @@ R = cv2.bitwise_and( R, R, mask=A )
 overlayImg = cv2.merge( [B, G, R, A] )
 
 # Setup camera
-stream = PiVideoStream( resolution=(384, 288), hf=True ).start()
+stream = PiVideoStream( resolution=(384, 288) ).start()
 normalDisplay = True
 sleep( 1.0 )
 
@@ -217,10 +234,18 @@ cv2.namedWindow( ver )
 cv2.setMouseCallback( ver, control )
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar( "dp", ver, 9, 50, placeholder )
-cv2.createTrackbar( "param2", ver, 43, 750, placeholder )
-cv2.createTrackbar( "minRadius", ver, 10, 200, placeholder )
-cv2.createTrackbar( "maxRadius", ver, 30, 250, placeholder )
+cv2.createTrackbar( "dp", ver, 16, 50, placeholder )
+cv2.createTrackbar( "param2", ver, 143, 750, placeholder )
+cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
+cv2.createTrackbar( "maxRadius", ver, 16, 250, placeholder )
+
+# AI view
+cv2.namedWindow( "AI_View" )
+
+cv2.createTrackbar( "Type:\n0.Binary\n1.BinaryInv\n2.Trunc\n3.2_0\n4.2_0Inv",
+                    "AI_View", 3, 4, placeholder )
+cv2.createTrackbar( "threshold", "AI_View", 65, 254, placeholder )
+cv2.createTrackbar( "maxValue", "AI_View", 255, 255, placeholder )
 
 # Create a queue for retrieving data from thread
 Q_procFrame = Queue( maxsize=0 )
@@ -241,7 +266,7 @@ if args["debug"]:
 while True:
     
     # Get image from stream
-    frame = stream.read()[36:252, 48:336]#[46:322, 60:420]
+    frame = stream.read()[36:252, 48:336]
     output = frame
 
     # Add a 4th dimension (Alpha) to the captured frame
@@ -268,7 +293,7 @@ while True:
     param2 = cv2.getTrackbarPos( "param2", ver )
     minRadius = cv2.getTrackbarPos( "minRadius", ver )
     maxRadius = cv2.getTrackbarPos( "maxRadius", ver )
-
+    
     # Start thread to scan for circles
     t_scan4circles = Thread( target=scan4circles, args=( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ) )
     t_scan4circles.daemon = True
