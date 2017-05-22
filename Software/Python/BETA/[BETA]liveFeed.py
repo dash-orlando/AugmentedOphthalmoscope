@@ -12,7 +12,7 @@
 *   - Added trackbars to change thresholding method and parameters mid-session
 *
 * KNOWN ISSUES:
-*   - Overlay is lagging the output image (aka circle is moved to
+*   - Overlay is lagging the output image (i.e circle is moved to
 *     the left, overlay moves to the left half a second later)
 *
 * AUTHOR: Mohammad Odeh
@@ -103,6 +103,7 @@ def procFrame(bgr2gray, Q_procFrame):
     # Dissolve noise while maintaining edge sharpness 
     #bgr2gray = cv2.bilateralFilter( bgr2gray, 11, 17, 17 )
     bgr2gray = cv2.bilateralFilter( bgr2gray, 5, 17, 17 )
+    bgr2gray = cv2.GaussianBlur(bgr2gray,(5,5),1)
 
     if threshType == 0:
         # Threshold any color that is not black to white
@@ -132,8 +133,8 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
     # Error handling in case a non-allowable integer is chosen (1)
     try:
         # Scan for circles
-        circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, dp, 396,
-                                    191, param2, minRadius, maxRadius )
+        circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, dp, minDist,
+                                    param1, param2, minRadius, maxRadius )
 
         '''
         Experimental values:            Original Values:
@@ -167,7 +168,7 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
 
                     # Join overlay with live feed and apply specified transparency level
                     output = cv2.addWeighted( overlay, args["alpha"], frame, 1.0, 0 )
-
+                    
                     # If debug flag is invoked
                     if args["debug"]:
                         # Draw circle
@@ -179,7 +180,7 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
 
                 # Place output in queue for retrieval by main thread
                 if Q_scan4circles.full() is False:
-                    Q_scan4circles.put( output )
+                    Q_scan4circles.put( [output, (x,y,r)] )
 
     # Error handling in case a non-allowable integer is chosen (2)
     except Exception as instance:
@@ -189,10 +190,12 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
         print( fullStamp() + " Resetting ALL trackbars..." )
 
         # Reset trackbars
-        cv2.createTrackbar( "dp", ver, 14, 50, placeholder )
-        cv2.createTrackbar( "param2", ver, 143, 750, placeholder )
+        cv2.createTrackbar( "dp", ver, 8, 50, placeholder )
+        cv2.createTrackbar( "minDist", ver, 396, 750, placeholder )
+        cv2.createTrackbar( "param1", ver, 154, 750, placeholder )
+        cv2.createTrackbar( "param2", ver, 291, 750, placeholder )
         cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
-        cv2.createTrackbar( "maxRadius", ver, 16, 250, placeholder )
+        cv2.createTrackbar( "maxRadius", ver, 14, 250, placeholder )
 
         print( fullStamp() + " Success\n" )
 
@@ -234,17 +237,19 @@ cv2.namedWindow( ver )
 cv2.setMouseCallback( ver, control )
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar( "dp", ver, 16, 50, placeholder )
-cv2.createTrackbar( "param2", ver, 143, 750, placeholder )
+cv2.createTrackbar( "dp", ver, 8, 50, placeholder )
+cv2.createTrackbar( "minDist", ver, 396, 750, placeholder )
+cv2.createTrackbar( "param1", ver, 154, 750, placeholder ) #191
+cv2.createTrackbar( "param2", ver, 291, 750, placeholder ) #143
 cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
-cv2.createTrackbar( "maxRadius", ver, 16, 250, placeholder )
+cv2.createTrackbar( "maxRadius", ver, 14, 250, placeholder ) #16
 
 # AI view
 cv2.namedWindow( "AI_View" )
 
 cv2.createTrackbar( "Type:\n0.Binary\n1.BinaryInv\n2.Trunc\n3.2_0\n4.2_0Inv",
                     "AI_View", 3, 4, placeholder )
-cv2.createTrackbar( "threshold", "AI_View", 65, 254, placeholder )
+cv2.createTrackbar( "threshold", "AI_View", 55, 254, placeholder ) #65
 cv2.createTrackbar( "maxValue", "AI_View", 255, 255, placeholder )
 
 # Create a queue for retrieving data from thread
@@ -261,6 +266,8 @@ if args["debug"]:
 # ************************************************************************
 # =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
+
+##initRun = True
 
 # Infinite loop
 while True:
@@ -287,9 +294,31 @@ while True:
     # Check if queue has something available for retrieval
     if Q_procFrame.qsize() > 0:
         bgr2gray = Q_procFrame.get()
+##        bgr2grayBAK = bgr2gray
+##        if initRun==False:
+##            if abs(oldx - x_ROI) > 10 or abs(oldy - y_ROI) > 10:
+##                # Calculate Region of interest constraints
+##                x1_ROI = x_ROI-r_ROI-10
+##                x2_ROI = x_ROI+r_ROI+10
+##                y1_ROI = y_ROI-r_ROI-10
+##                y2_ROI = y_ROI+r_ROI+10
+##
+##                oldx = x_ROI
+##                oldy = y_ROI
+##                print"updated xyROI"
+##
+##            if x1_ROI>0 and x1_ROI<w and x2_ROI>0 and x2_ROI<w and y1_ROI>0 and y1_ROI<h and y2_ROI>0 and y2_ROI<h:
+##                print("xyr_ROI: " , (x_ROI, y_ROI, r_ROI))
+##                print("ROI Location: ", (y_ROI-r_ROI), (y_ROI+r_ROI), (x_ROI-r_ROI), (x_ROI+r_ROI))
+##                print("BGR shape: ", bgr2gray.shape)
+##                bgr2gray = bgr2gray[ y1_ROI:y2_ROI, x1_ROI:x2_ROI]
+##            else:
+##                bgr2gray = bgr2grayBAK
 
     # Get trackbar position and reflect it in HoughCircles parameters input
     dp = cv2.getTrackbarPos( "dp", ver )
+    minDist = cv2.getTrackbarPos( "minDist", ver )
+    param1 = cv2.getTrackbarPos( "param1", ver )
     param2 = cv2.getTrackbarPos( "param2", ver )
     minRadius = cv2.getTrackbarPos( "minRadius", ver )
     maxRadius = cv2.getTrackbarPos( "maxRadius", ver )
@@ -301,7 +330,17 @@ while True:
 
     # Check if queue has something available for retrieval
     if Q_scan4circles.qsize() > 0:
-        output = Q_scan4circles.get()
+        output, (x_ROI, y_ROI, r_ROI) = Q_scan4circles.get()
+##        if initRun==True:
+##            initRun=False
+##
+##            x1_ROI = x_ROI-r_ROI-10
+##            x2_ROI = x_ROI+r_ROI+10
+##            y1_ROI = y_ROI-r_ROI-10
+##            y2_ROI = y_ROI+r_ROI+10
+##
+##            oldx = x_ROI
+##            oldy = y_ROI
 
     # If debug flag is invoked
     if args["debug"]:
@@ -315,7 +354,6 @@ while True:
     elif not(normalDisplay):
         cv2.imshow(ver, bgr2gray)
         key = cv2.waitKey(1) & 0xFF
-
 
 # ************************************************************************
 # =============================> DEPRECATED <=============================
