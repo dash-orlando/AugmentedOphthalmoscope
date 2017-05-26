@@ -102,13 +102,13 @@ def procFrame(bgr2gray, Q_procFrame):
 
     # Get trackbar position and reflect it threshold type and values
     threshType = cv2.getTrackbarPos( "Type:\n0.Binary\n1.BinaryInv\n2.Trunc\n3.2_0\n4.2_0Inv",
-                    "AI_View")
-    thresholdVal = cv2.getTrackbarPos( "thresholdVal", "AI_View")
-    maxValue = cv2.getTrackbarPos( "maxValue", "AI_View")
+                                     "AI_View")
+    thresholdVal    = cv2.getTrackbarPos( "thresholdVal", "AI_View")
+    maxValue        = cv2.getTrackbarPos( "maxValue"    , "AI_View")
 
     # Dissolve noise while maintaining edge sharpness 
     bgr2gray = cv2.bilateralFilter( bgr2gray, 5, 17, 17 ) #( bgr2gray, 11, 17, 17 )
-    bgr2gray = cv2.GaussianBlur(bgr2gray,(5,5),1)
+    bgr2gray = cv2.GaussianBlur( bgr2gray, (5, 5), 1 )
 
     # Threshold any color that is not black to white
     if threshType == 0:
@@ -185,6 +185,8 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
                 x1 = x-r
                 x2 = x+r
 
+            # If within scan distance display found circles
+            if ToF_Dist == 1:
                 # Check whether overlay location is within window resolution
                 if x1>0 and x1<w and x2>0 and x2<w and y1>0 and y1<h and y2>0 and y2<h:
                     # Place overlay image inside circle
@@ -211,15 +213,15 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
         print( fullStamp() + " Exception or Error Caught" )
         print( fullStamp() + " Error Type %s" %str(type(instance)) )
         #print( fullStamp() + " Error Arguments %s" %str( instance.arg ) )
-        print( fullStamp() + " Resetting ALL trackbars..." )
+        print( fullStamp() + " Resetting Trackbars..." )
 
         # Reset trackbars
-        cv2.createTrackbar( "dp", ver, 8, 50, placeholder )
-        cv2.createTrackbar( "minDist", ver, 396, 750, placeholder )
-        cv2.createTrackbar( "param1", ver, 154, 750, placeholder )
-        cv2.createTrackbar( "param2", ver, 291, 750, placeholder )
-        cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
-        cv2.createTrackbar( "maxRadius", ver, 14, 250, placeholder )
+        cv2.createTrackbar( "dp"        , ver, 8    , 50 , placeholder )
+        cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder )
+        cv2.createTrackbar( "param1"    , ver, 154  , 750, placeholder )
+        cv2.createTrackbar( "param2"    , ver, 99   , 750, placeholder )
+        cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder )
+        cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder )
 
         print( fullStamp() + " Success" )
 
@@ -232,17 +234,17 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
 
 # Setup GPIO pins and turn on LED
 LED = 21
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-GPIO.setup(LED,GPIO.OUT)
-GPIO.output(LED,GPIO.HIGH)
-#GPIO.output(LED,GPIO.LOW)
+GPIO.setmode( GPIO.BCM )
+GPIO.setwarnings( False )
+GPIO.setup( LED, GPIO.OUT )
+GPIO.output( LED, GPIO.HIGH )
+#GPIO.output( LED, GPIO.LOW )
 
 # Check whether an overlay is specified
 if args["overlay"] is not None:
     overlayImg = cv2.imread( args["overlay"], cv2.IMREAD_UNCHANGED )
 else:
-    overlayImg = cv2.imread( "Overlay.png", cv2.IMREAD_UNCHANGED )
+    overlayImg = cv2.imread( "Overlay.png"  , cv2.IMREAD_UNCHANGED )
 
 # Load overlay image with Alpha channel
 ( wH, wW ) = overlayImg.shape[:2]
@@ -262,12 +264,12 @@ cv2.namedWindow( ver )
 cv2.setMouseCallback( ver, control )
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar( "dp", ver, 8, 50, placeholder )
-cv2.createTrackbar( "minDist", ver, 396, 750, placeholder )
-cv2.createTrackbar( "param1", ver, 154, 750, placeholder ) #191
-cv2.createTrackbar( "param2", ver, 291, 750, placeholder ) #143
-cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
-cv2.createTrackbar( "maxRadius", ver, 14, 250, placeholder ) #16
+cv2.createTrackbar( "dp"        , ver, 8    , 50 , placeholder )
+cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder )
+cv2.createTrackbar( "param1"    , ver, 154  , 750, placeholder )#191
+cv2.createTrackbar( "param2"    , ver, 99   , 750, placeholder )#291
+cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder )
+cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder )#16
 
 # Setup window and trackbars for AI view
 cv2.namedWindow( "AI_View" )
@@ -339,18 +341,14 @@ while True:
     minRadius = cv2.getTrackbarPos( "minRadius", ver )
     maxRadius = cv2.getTrackbarPos( "maxRadius", ver )
 
-    # If within scan distance call thread to scan for circles
-    if ToF_Dist == 1:
-        # Start thread to scan for circles
-        t_scan4circles = Thread( target=scan4circles, args=( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ) )
-        t_scan4circles.daemon = True
-        t_scan4circles.start()
+    # Start thread to scan for circles
+    t_scan4circles = Thread( target=scan4circles, args=( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ) )
+    t_scan4circles.daemon = True
+    t_scan4circles.start()
 
-        # Check if queue has something available for retrieval
-        if Q_scan4circles.qsize() > 0:
-            output = Q_scan4circles.get()
-    else:
-        output = frame
+    # Check if queue has something available for retrieval
+    if Q_scan4circles.qsize() > 0:
+        output = Q_scan4circles.get()
 
     # If debug flag is invoked
     if args["debug"]:
