@@ -113,7 +113,8 @@ def procFrame(bgr2gray, Q_procFrame):
 # ******************************************************
 # Define a function to scan for circles from camera feed
 # ******************************************************
-
+def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
+    
     # Error handling in case a non-allowable integer is chosen (1)
     try:
         # Scan for circles
