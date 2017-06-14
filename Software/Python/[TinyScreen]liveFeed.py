@@ -53,7 +53,6 @@ ap.add_argument("-d", "--debug", action='store_true',
 
 args = vars( ap.parse_args() )
 
-#args["debug"] = True
 # ************************************************************************
 # =====================> DEFINE NECESSARY FUNCTIONS <=====================
 # ************************************************************************
@@ -101,7 +100,7 @@ def procFrame(bgr2gray, Q_procFrame):
     bgr2gray = cv2.GaussianBlur(bgr2gray,(5,5),1)
 
     # Threshold any color that is not black to white
-    retval, thresholded = cv2.threshold( bgr2gray, 455, 255, cv2.THRESH_TOZERO )
+    retval, thresholded = cv2.threshold( bgr2gray, 45, 255, cv2.THRESH_TOZERO )
 
     kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
     bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
@@ -123,12 +122,12 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
 
         '''
         Experimental values:            Original Values:
-        dp = 9                          dp = 9
+        dp = 8                          dp = 9
         minDist = 396                   minDist = 396
-        param1 = 191                    param1 = 191
-        param2 = 43                     param2 = 43
-        minRadius = 10                  minRadius = 1
-        maxRadius = 30                  maxRadius = 16
+        param1 = 154                    param1 = 191
+        param2 = 99                     param2 = 43
+        minRadius = 1                   minRadius = 10
+        maxRadius = 14                  maxRadius = 30
         '''
 
         # If circles are found draw them
@@ -225,8 +224,6 @@ if args["debug"]:
 # ************************************************************************
 # =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
-
-##initRun = True
 
 # Infinite loop
 while True:
