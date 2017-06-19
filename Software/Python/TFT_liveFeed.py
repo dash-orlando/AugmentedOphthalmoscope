@@ -1,5 +1,7 @@
 '''
-* MODIFIED TO WORK ON SMALL TFT SCREEN
+* A MODIFIED VERSION OF THE ORIGINAL liveFeed.py
+* MODIFIED TO WORK ON A SMALL (2.0") TFT SCREEN
+* WITH A RESOLUTION OF (384, 288)
 *
 * NOTE: If overlay is NOT specified a sample overlay is chosen by default
 * USEFUL ARGUMENTS:
@@ -7,18 +9,17 @@
 *   -a/--alpha: Specify transperancy level (0.0 - 1.0)
 *   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY!!!)
 *
-* VERSION: 0.9.5
+* VERSION: 0.9.5.1
 *   - Added threads to distribute workload. Program now uses ~70% of
 *     CPU power instead of ~30%
 *   - Increased FPS from 7.5 to 35, a whooping 467% improvement!!!
-*   - Added trackbars to change thresholding method and parameters mid-session
+*   - Fills entire screen area (goes full resolution)
 *
 * KNOWN ISSUES:
-*   - Overlay is lagging the output image (i.e circle is moved to
-*     the left, overlay moves to the left half a second later)
+*   - Overlay keeps flickering
 *
 * AUTHOR: Mohammad Odeh
-* UPDATED: May 18th, 2017
+* UPDATED: Jun 19th, 2017
 * ----------------------------------------------------------
 * ----------------------------------------------------------
 *
@@ -26,7 +27,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.9.5"
+ver = "TFT Live Feed Ver0.9.5.1"
 print __doc__
 
 # Import necessary modules
@@ -170,7 +171,6 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
     except Exception as instance:
         print( fullStamp() + " Exception or Error Caught" )
         print( fullStamp() + " Error Type" + str(type(instance)) + "\n")
-        #print( fullStamp() + " Error Arguments " + str( instance.arg ) + "\n" )
         print( fullStamp() + " Resetting ALL trackbars..." )
 
         # Exit function and re-loop
@@ -207,7 +207,8 @@ normalDisplay = True
 sleep( 1.0 )
 
 # Setup window and mouseCallback event
-cv2.namedWindow( ver )
+cv2.namedWindow( ver, cv2.WND_PROP_FULLSCREEN )
+cv2.setWindowProperty( ver, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN )
 cv2.setMouseCallback( ver, control )
 
 # Create a queue for retrieving data from thread

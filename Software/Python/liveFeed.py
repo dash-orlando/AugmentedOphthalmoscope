@@ -104,8 +104,8 @@ def procFrame(bgr2gray, Q_procFrame):
     bgr2gray = cv2.bilateralFilter( bgr2gray, 5, 17, 17 )
     bgr2gray = cv2.GaussianBlur(bgr2gray,(5,5),1)
 
+    # Threshold any color that is not black to white
     if threshType == 0:
-        # Threshold any color that is not black to white
         retval, thresholded = cv2.threshold( bgr2gray, threshold, maxValue, cv2.THRESH_BINARY )
     elif threshType == 1:
         retval, thresholded = cv2.threshold( bgr2gray, threshold, maxValue, cv2.THRESH_BINARY_INV )
@@ -184,21 +184,20 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
     except Exception as instance:
         print( fullStamp() + " Exception or Error Caught" )
         print( fullStamp() + " Error Type" + str(type(instance)) + "\n")
-        #print( fullStamp() + " Error Arguments " + str( instance.arg ) + "\n" )
         print( fullStamp() + " Resetting ALL trackbars..." )
 
         # Reset trackbars
-        cv2.createTrackbar( "dp", ver, 8, 50, placeholder )
-        cv2.createTrackbar( "minDist", ver, 396, 750, placeholder )
-        cv2.createTrackbar( "param1", ver, 154, 750, placeholder )
-        cv2.createTrackbar( "param2", ver, 99, 750, placeholder )
-        cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
-        cv2.createTrackbar( "maxRadius", ver, 14, 250, placeholder )
+        cv2.createTrackbar( "dp"        , ver, 8    , 50 , placeholder  )
+        cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder  )
+        cv2.createTrackbar( "param1"    , ver, 154  , 750, placeholder  )
+        cv2.createTrackbar( "param2"    , ver, 99   , 750, placeholder  )
+        cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder  )
+        cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder  )
 
         print( fullStamp() + " Success\n" )
 
         # Exit function and re-loop
-        #return()
+        return()
 
 # ************************************************************************
 # ===========================> SETUP PROGRAM <===========================
@@ -235,20 +234,20 @@ cv2.namedWindow( ver )
 cv2.setMouseCallback( ver, control )
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar( "dp", ver, 8, 50, placeholder )
-cv2.createTrackbar( "minDist", ver, 396, 750, placeholder )
-cv2.createTrackbar( "param1", ver, 154, 750, placeholder ) #191
-cv2.createTrackbar( "param2", ver, 99, 750, placeholder ) #143
-cv2.createTrackbar( "minRadius", ver, 1, 200, placeholder )
-cv2.createTrackbar( "maxRadius", ver, 14, 250, placeholder ) #16
+cv2.createTrackbar( "dp"        , ver, 8    , 50 , placeholder  )
+cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder  )
+cv2.createTrackbar( "param1"    , ver, 154  , 750, placeholder  ) #191
+cv2.createTrackbar( "param2"    , ver, 99   , 750, placeholder  ) #143
+cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder  )
+cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder  ) #16
 
 # AI view
 cv2.namedWindow( "AI_View" )
 
 cv2.createTrackbar( "Type:\n0.Binary\n1.BinaryInv\n2.Trunc\n3.2_0\n4.2_0Inv",
                     "AI_View", 3, 4, placeholder )
-cv2.createTrackbar( "threshold", "AI_View", 45, 254, placeholder ) #65
-cv2.createTrackbar( "maxValue", "AI_View", 255, 255, placeholder )
+cv2.createTrackbar( "threshold", "AI_View", 45 , 254, placeholder ) #65
+cv2.createTrackbar( "maxValue" , "AI_View", 255, 255, placeholder )
 
 # Create a queue for retrieving data from thread
 Q_procFrame = Queue( maxsize=0 )
