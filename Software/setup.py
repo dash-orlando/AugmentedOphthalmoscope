@@ -3,15 +3,21 @@
 # A script to perform initial setup procedures for the TinyScreen version
 # of the ophthalmoscope.
 #
-# AUTHOR : Mohammad Odeh
-# DATE   : Jun. 19th, 2017
+# AUTHOR    : Mohammad Odeh
+# DATE      : Jun. 19th, 2017
+# MODIFIED  : Jun. 20th, 2017
 #
 '''
 
-import sys, os, platform, fileinput
-from time import sleep
-from os import path, listdir, lseek
-from shutil import copy, copytree, rmtree, ignore_patterns
+import  sys, os, platform, argparse
+from    os     import path, listdir, lseek
+from    shutil import copy, copytree, rmtree, ignore_patterns
+
+# Construct Argument Parser
+ap = argparse.ArgumentParser()
+ap.add_argument("-u", "--update", action="store_true", required=False,
+                help="Update current folder with all the files present in the Github repository")
+args = vars(ap.parse_args())
 
 # Enumerate strings to replace
 TEXT_TO_SEARCH = [  "#overscan_left=16"         ,
@@ -45,12 +51,12 @@ if platform.system() == "Linux":
 
 # If backup already exists, do nothing
 if (os.path.isfile( dst )):
-    print( ">>> System parameters already modified." )
+    print( ">>> Device already supports TFT." )
     print( ">>> No further action is required.\n" )
 
 # Else, copy config.txt to config.txt.BAK then modify
 else:
-    print( ">>> Copying config.txt ===to==> config.txt.BAK" )
+    print( ">>> Copying config.txt ====> config.txt.BAK" )
     copy(src, dst)
     print( ">>> Backup created." )
     print( ">>> Preparing to modify file.\n" )
@@ -63,8 +69,7 @@ else:
             # If string is found, write over it
             if line.strip() == TEXT_TO_SEARCH[i]:
                 output_file.write(TEXT_TO_INSERT[i])
-                print( ">>> Replaced: %s" %TEXT_TO_SEARCH[i] )
-                print( ">>> With    : %s\n" %TEXT_TO_INSERT[i] )
+                print( ">>> Found: %s" %TEXT_TO_SEARCH[i] )
 
                 # If index is out of bounds, do not increment counter
                 if i == len(TEXT_TO_SEARCH)-1:
@@ -78,6 +83,7 @@ else:
                 output_file.write(line)
             
     print( ">>> Successfuly modified config.txt" )
+    print( ">>> Reboot required for changes to take effect.\n" )
 
 print( '''
 # ************************************************************************
@@ -113,4 +119,51 @@ else:
 
     print( ">>> Successfully appended to autostart." )
     print( ">>> Please reboot.\n" )
+
+
+print'''
+# ************************************************************************
+#                       COPY FILES/DIRECTORIES + MODULES
+# ************************************************************************
+'''
+
+if platform.system()=='Linux':
+
+    # Define useful paths
+    homeDir = "/home/pi"
+    src = os.getcwd()[:-9]
+    dst = homeDir + "/Desktop/optho"
+    srcContent = listdir(src)
+
+# If files have already been copied, do nothing
+if (path.exists(dst)):
+    print(">>> Ophthalmoscope Directory exists.\n>>> Checking files...")
+
+    # If update argument is provided, update folder
+    if args["update"]:
+        print(">>> Cleaning up...")
+        rmtree(dst)
+        print(">>> Removed old files...")
+        copytree(src, dst, ignore=ignore_patterns('*.pyc', 'tmp*'))
+        print(">>> Updated current USER folder.")
+
+    # Compare sizes of both folders
+    dstContent = listdir(dst)
+    if len(srcContent) > len(dstContent):          
+        print(">>> The Github folder is ahead by %i file" %(len(srcContent)-len(dstContent)) )
+        print(">>> Run this script using -u/--update to update USER folder.")
+        print(">>> WARNING: Running the update WILL OVERWRITE current files.")
+    else:
+        print(">>> No further action is required.")
+    
+
+# If files have NOT been copied, copy them
+else:
+    print(">>> Copying files and directories...")
+    
+    # Copy files and directories to the home directory
+    copytree(src, dst, ignore=ignore_patterns('*.pyc', 'tmp*'))
+
+    print(">>> Files and directories have been successfuly copied.")
+
 
