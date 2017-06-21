@@ -13,6 +13,10 @@ import  sys, os, platform, argparse
 from    os     import path, listdir, lseek
 from    shutil import copy, copytree, rmtree, ignore_patterns
 
+class TheErrorOfMoe(Exception):
+    '''Raise this when something goes awry'''
+    pass
+
 # Construct Argument Parser
 ap = argparse.ArgumentParser()
 ap.add_argument("-u", "--update", action="store_true", required=False,
@@ -82,8 +86,9 @@ else:
             else:
                 output_file.write(line)
             
-    print( ">>> Successfuly modified config.txt" )
+    print( "\n>>> Successfuly modified config.txt" )
     print( ">>> Reboot required for changes to take effect.\n" )
+
 
 print( '''
 # ************************************************************************
@@ -100,39 +105,77 @@ if platform.system() == "Linux":
     dst = homeDir
     PATH = homeDir + "/.config/lxsession/LXDE-pi/autostart"
 
-# If autolaunch has been configured, do nothing
+
+# Check if executable is in place
 if (os.path.isfile(dst + "/launchOphto.sh")):
+    print( ">>> Executable already in place.")
+    isFile = True
+else:
+    # Copy launchOnBoot.py to the home directory
+    isFile = False
+
+# Check if string is appended to autolaunch
+with open(PATH, 'r') as f:
+    # Traverese file line-by-line
+    for line in f:
+        if line.strip() == "./launchOphto.sh":
+            print( ">>> autostart entry found.")
+            isString = True
+            break
+        else:
+            isString = False
+
+
+# If autolaunch has been configured, do nothing
+if (isFile==True and isString==True):
     print( ">>> Autolaunch on boot is already enabled." )
     print( ">>> No further action is required." )
 
-# If autolaunch has NOT been configured, configure it
-else:
-    print( ">>> Configuring autolaunch." )
-    
-    # Copy launchOnBoot.py to the home directory
-    copy(src, dst)
 
+# Else if executable exists but not string, add string
+elif (isFile==True and isString==False):
+    print( ">>> Configuring autolaunch." )
     # Append the launch command to the autostart file
     with open(PATH, "a") as f:
         f.write( "./launchOphto.sh\n") 
         f.close()
+        
 
+# Else if string exists but executable doesn't, add executable
+elif (isFile==False and isString==True):
+    print( ">>> Configuring autolaunch." )
+    copy(src, dst)
+
+
+# Else if autolaunch has NOT been configured at all, configure it
+elif (isFile==False and isString==False):
+    print( ">>> Configuring autolaunch." )
+    copy(src, dst)
+    with open(PATH, "a") as f:
+        f.write( "./launchOphto.sh\n") 
+        f.close()
+
+# Else, raise flag
+else:
+    raise TheErrorOfMoe("Schrodinger's autolaunch...")
+
+if (isFile==False or isString==False):
     print( ">>> Successfully appended to autostart." )
     print( ">>> Please reboot.\n" )
 
 
-print'''
+print( '''
 # ************************************************************************
 #                       COPY FILES/DIRECTORIES + MODULES
 # ************************************************************************
-'''
+''' )
 
 if platform.system()=='Linux':
 
     # Define useful paths
     homeDir = "/home/pi"
     src = os.getcwd()[:-9]
-    dst = homeDir + "/Desktop/optho"
+    dst = homeDir + "/Desktop/ophto"
     srcContent = listdir(src)
 
 # If files have already been copied, do nothing
@@ -165,5 +208,4 @@ else:
     copytree(src, dst, ignore=ignore_patterns('*.pyc', 'tmp*'))
 
     print(">>> Files and directories have been successfuly copied.")
-
 

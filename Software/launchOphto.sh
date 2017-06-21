@@ -2,6 +2,6 @@
 # launchOphto.sh
 
 cd ~/
-cd Desktop/optho/Software/Python
+cd Desktop/ophto/Software/Python
 sudo python TFT_liveFeed.py
 cd ~/
