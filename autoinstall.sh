@@ -3,7 +3,7 @@
 
 #Download essential & optimization libraries:-
 sudo apt-get install build-essential cmake pkg-config
-sudo apt-get install libjpeg8-dev libtiff5-dev libjasper-dev libpng12-dev
+sudo apt-get install libjpeg8-dev libjasper-dev libpng12-dev
 sudo apt-get install libgtk2.0-dev
 sudo apt-get install libavcodec-dev libavformat-dev libswscale-dev libv4l-dev
 sudo apt-get install libxvidcore-dev libx264-dev
@@ -19,9 +19,9 @@ sudo pip install --upgrade numpy
 
 #Download OpenCV (ver3.1.0) + extra modules:-
 cd ~
-sudo wget -O opencv.zip https://github.com/Itseez/opencv/archive/3.1.0.zip
+sudo wget -O opencv.zip https://github.com/opencv/opencv/archive/3.1.0.zip
 sudo unzip opencv.zip
-sudo wget -O opencv_contrib.zip https://github.com/Itseez/opencv_contrib/archive/3.1.0.zip
+sudo wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/3.1.0.zip
 sudo unzip opencv_contrib.zip
 
 #Compile & build:-
