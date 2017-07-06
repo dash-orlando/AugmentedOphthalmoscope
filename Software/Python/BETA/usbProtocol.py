@@ -11,7 +11,7 @@ Fluvio L Lobo Fenoglietto
 """
 
 # Import Libraries and/or Modules
-import bluetooth
+#import bluetooth
 """
         Implementation of the "bluetooth" module may require the installation of the python-bluez package
         >> sudp apt-get install python-bluez

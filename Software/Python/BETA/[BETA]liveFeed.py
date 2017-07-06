@@ -56,7 +56,7 @@ ap.add_argument("-d", "--debug", action='store_true',
 
 args = vars( ap.parse_args() )
 
-#args["debug"] = True
+args["debug"] = True
 # ************************************************************************
 # =====================> DEFINE NECESSARY FUNCTIONS <=====================
 # ************************************************************************
@@ -145,6 +145,9 @@ def getDist():
         # Do the reading iff there is something available at serial port
         if ToF.in_waiting > 0:
             ToF_Dist = int( (ToF.read(size=1).strip('\0')).strip('\n') )
+            # If debug flag is invoked
+            if args["debug"]:
+                print( ToF_Dist )
         else:
             pass
 
@@ -216,10 +219,10 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
         print( fullStamp() + " Resetting Trackbars..." )
 
         # Reset trackbars
-        cv2.createTrackbar( "dp"        , ver, 8    , 50 , placeholder )
+        cv2.createTrackbar( "dp"        , ver, 14   , 50 , placeholder ) #8
         cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder )
-        cv2.createTrackbar( "param1"    , ver, 154  , 750, placeholder )
-        cv2.createTrackbar( "param2"    , ver, 99   , 750, placeholder )
+        cv2.createTrackbar( "param1"    , ver, 326  , 750, placeholder ) #154
+        cv2.createTrackbar( "param2"    , ver, 231  , 750, placeholder ) #99
         cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder )
         cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder )
 
@@ -264,12 +267,18 @@ cv2.namedWindow( ver )
 cv2.setMouseCallback( ver, control )
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar( "dp"        , ver, 8    , 50 , placeholder )
+cv2.createTrackbar( "dp"        , ver, 14   , 50 , placeholder ) #8
 cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder )
-cv2.createTrackbar( "param1"    , ver, 154  , 750, placeholder )#191
-cv2.createTrackbar( "param2"    , ver, 99   , 750, placeholder )#291
+cv2.createTrackbar( "param1"    , ver, 326  , 750, placeholder ) #154
+cv2.createTrackbar( "param2"    , ver, 231  , 750, placeholder ) #99
 cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder )
-cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder )#16
+cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder )
+##cv2.createTrackbar( "dp"        , ver, 8    , 50 , placeholder )
+##cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder )
+##cv2.createTrackbar( "param1"    , ver, 154  , 750, placeholder )#191
+##cv2.createTrackbar( "param2"    , ver, 99   , 750, placeholder )#291
+##cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder )
+##cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder )#16
 
 # Setup window and trackbars for AI view
 cv2.namedWindow( "AI_View" )
@@ -284,7 +293,16 @@ deviceName, port, baudRate = "VL6180", 0, 115200
 ToF = createUSBPort( deviceName, port, baudRate, 3 )
 if ToF.is_open == False:
     ToF.open()
-ToF.close()
+    sleep( 0.5 )
+    inChar = (ToF.read(size=1).strip('\0')).strip('\n')
+    ToF.write('2')
+    while inChar is not 'y':
+        inChar = (ToF.read(size=1).strip('\0')).strip('\n')
+        # If debug flag is invoked
+        if args["debug"]:
+            print( inChar )
+    print( "Distance Readings Initiated" )
+#ToF.close()
 ToF_Dist = 0    # Initialize to OFF
 
 # Create a queue for retrieving data from thread
