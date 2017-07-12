@@ -9,17 +9,22 @@
 *   -a/--alpha: Specify transperancy level (0.0 - 1.0)
 *   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY!!!)
 *
-* VERSION: 0.9.5.1
-*   - Added threads to distribute workload. Program now uses ~70% of
-*     CPU power instead of ~30%
-*   - Increased FPS from 7.5 to 35, a whooping 467% improvement!!!
-*   - Fills entire screen area (goes full resolution)
+* VERSION: 0.9.6
+*   - Threads now safely exit at program shutdown
+*   - FPS dropped from ~35 to ~28 due to the addition of constant
+*     serial checking/pooling.
+*   - Incorporated ToF sensor: overlay is now triggered ONLY at a
+*     preset distance away from target.
+*   - Reduced "jittering" of overlay by manipulating parameters
 *
 * KNOWN ISSUES:
-*   - Overlay keeps flickering
+*   - pyserial & threading do NOT play nicely and conflicts arise.
+*     An IOError is raised at program shutdown, nonetheless, this
+*     does NOT affect program operation. Error can be safely ignored.
 *
-* AUTHOR: Mohammad Odeh
-* UPDATED: Jun 19th, 2017
+* AUTHOR:   Mohammad Odeh
+* WRITTEN:  Aug  1st, 2016
+* UPDATED:  Jul 11th, 2017
 * ----------------------------------------------------------
 * ----------------------------------------------------------
 *
@@ -27,18 +32,18 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "TFT Live Feed Ver0.9.5.1"
+ver = "TFT Live Feed Ver0.9.6
 print __doc__
 
 # Import necessary modules
 import  numpy, cv2, argparse                                # Various Stuff
-import  RPi.GPIO                    as      GPIO            # GPIO pins for peripherals (i.e LED)
 from    imutils.video.pivideostream import  PiVideoStream   # Import threaded PiCam module
+from    imutils.video               import  FPS             # Benchmark FPS
 from    time                        import  sleep           # Sleep for stability
 from    threading                   import  Thread          # Used to thread processes
 from    Queue                       import  Queue           # Used to queue input/output
 from    timeStamp                   import  fullStamp       # Show date/time on console output
-from    imutils.video               import  FPS             # Benchmark FPS
+from    usbProtocol                 import  createUSBPort   # Create USB Port
 
 # ************************************************************************
 # =====================> CONSTRUCT ARGUMENT PARSER <=====================
@@ -72,11 +77,31 @@ def control( event, x, y, flags, param ):
             print( fullStamp() + " [INFO] Elapsed time: {:.2f}".format(fps.elapsed()) )
             print( fullStamp() + " [INFO] Approx. FPS : {:.2f}".format(fps.fps()) )
 
-        # Turn off LED
-        GPIO.output( LED, GPIO.LOW )
-        stream.stop()
-        cv2.destroyAllWindows()
-        quit()
+        # Do some shutdown clean up
+        try:
+            if ( t_scan4circles.isAlive() ):
+                t_scan4circles.join(5.0)    # Terminate circle scanning thread
+                if args["debug"]:           # If debug flag is invoked, display message
+                    print( fullStamp() + " scan4circles: Terminated" )
+                
+            if ( t_procFrame.isAlive() ):
+                t_procFrame.join(5.0)       # Terminate image processing thread
+                if args["debug"]:           # If debug flag is invoked, display message
+                    print( fullStamp() + " procFrame: Terminated" )
+
+            ToF.close()                     # Close port
+            if ( t_getDist.isAlive() ):
+                t_getDist.join(5.0)         # Terminate serial port pooling thread
+                if args["debug"]:           # If debug flag is invoked, display message
+                    print( fullStamp() + " getDist: Terminated" )
+
+        except Exception as e:
+            print( "Caught Error: %s" %str( type(e) ) )
+
+        finally:
+            stream.stop()                   # Stop capturing frames from stream
+            cv2.destroyAllWindows()         # Close any open windows
+            quit()                          # Shutdown python interpreter
         
     # Left button toggles display
     elif event == cv2.EVENT_LBUTTONDOWN:
@@ -98,10 +123,10 @@ def procFrame(bgr2gray, Q_procFrame):
 
     # Dissolve noise while maintaining edge sharpness 
     bgr2gray = cv2.bilateralFilter( bgr2gray, 5, 17, 17 )
-    bgr2gray = cv2.GaussianBlur(bgr2gray,(5,5),1)
+    bgr2gray = cv2.GaussianBlur( bgr2gray,(5, 5), 1 )
 
     # Threshold any color that is not black to white
-    retval, thresholded = cv2.threshold( bgr2gray, 45, 255, cv2.THRESH_TOZERO )
+    retval, thresholded = cv2.threshold( bgr2gray, 30, 255, cv2.THRESH_TOZERO )
 
     kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
     bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
@@ -109,27 +134,37 @@ def procFrame(bgr2gray, Q_procFrame):
     # Place processed image in queue for retrieval
     Q_procFrame.put(bgr2gray)
 
+# ******************************************************
+# Define a function to get distance from ToF sensor
+# ******************************************************
+def getDist():
+
+    # No need to reevaluate in the main function at every iteration
+    global ToF_Dist
+
+    # Listen to serial port as long as port is open
+    while ( ToF.is_open ):
+
+        # Do the reading iff there is something available at serial port
+        if ToF.in_waiting > 0:
+            ToF_Dist = int( (ToF.read(size=1).strip('\0')).strip('\n') )
+            # If debug flag is invoked
+            if args["debug"]:
+                print( ToF_Dist )
+        else:
+            pass
+
 
 # ******************************************************
 # Define a function to scan for circles from camera feed
 # ******************************************************
-def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
-    
+def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
+
     # Error handling in case a non-allowable integer is chosen (1)
     try:
         # Scan for circles
-        circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, 8, 396,
-                                    154, 99, 1, 14 )
-
-        '''
-        Experimental values:            Original Values:
-        dp = 8                          dp = 9
-        minDist = 396                   minDist = 396
-        param1 = 154                    param1 = 191
-        param2 = 99                     param2 = 43
-        minRadius = 1                   minRadius = 10
-        maxRadius = 14                  maxRadius = 30
-        '''
+        circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, 14, 396,
+                                    316, 236, 1, 14 )
 
         # If circles are found draw them
         if circles is not None:
@@ -146,6 +181,8 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
                 x1 = x-r
                 x2 = x+r
 
+            # If within scan distance display found circles
+            if ToF_Dist == 1:
                 # Check whether overlay location is within window resolution
                 if x1>0 and x1<w and x2>0 and x2<w and y1>0 and y1<h and y2>0 and y2<h:
                     # Place overlay image inside circle
@@ -165,13 +202,12 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
 
                 # Place output in queue for retrieval by main thread
                 if Q_scan4circles.full() is False:
-                    Q_scan4circles.put( [output, (x,y,r)] )
+                    Q_scan4circles.put( output )
 
     # Error handling in case a non-allowable integer is chosen (2)
     except Exception as instance:
         print( fullStamp() + " Exception or Error Caught" )
-        print( fullStamp() + " Error Type" + str(type(instance)) + "\n")
-        print( fullStamp() + " Resetting ALL trackbars..." )
+        print( fullStamp() + " Error Type %s" %str(type(instance)) )
 
         # Exit function and re-loop
         return()
@@ -179,13 +215,6 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q ):
 # ************************************************************************
 # ===========================> SETUP PROGRAM <===========================
 # ************************************************************************
-
-# Setup GPIO pins and turn on LED
-LED = 21
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-GPIO.setup(LED,GPIO.OUT)
-GPIO.output(LED,GPIO.HIGH)
 
 # Check whether an overlay is specified
 if args["overlay"] is not None:
@@ -211,14 +240,36 @@ cv2.namedWindow( ver, cv2.WND_PROP_FULLSCREEN )
 cv2.setWindowProperty( ver, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN )
 cv2.setMouseCallback( ver, control )
 
+# Initialize ToF sensor
+deviceName, port, baudRate = "VL6180", 0, 115200
+ToF = createUSBPort( deviceName, port, baudRate, 3 )
+if ToF.is_open == False:
+    ToF.open()
+    sleep( 0.5 )
+    inChar = (ToF.read(size=1).strip('\0')).strip('\n')
+    ToF.write('2')
+    while inChar is not 'y':
+        inChar = (ToF.read(size=1).strip('\0')).strip('\n')
+        # If debug flag is invoked
+        if args["debug"]:
+            print( inChar )
+    print( "Distance Readings Initiated" )
+
+ToF_Dist = 0    # Initialize to OFF
+
 # Create a queue for retrieving data from thread
-Q_procFrame = Queue( maxsize=0 )
-Q_scan4circles = Queue( maxsize=0 )
+Q_procFrame     = Queue( maxsize=0 )
+Q_scan4circles  = Queue( maxsize=0 )
+
+# Start listening to serial port
+t_getDist = Thread( target=getDist, args=() )
+t_getDist.daemon = True
+t_getDist.start()
 
 # If debug flag is invoked
 if args["debug"]:
-    print( fullStamp() + " [INFO] Debug Mode: ON" )
     # Start benchmark
+    print( fullStamp() + " [INFO] Debug Mode: ON" )
     fps = FPS().start()
 
 
@@ -245,7 +296,6 @@ while True:
 
     # Start thread to process image and apply required filters to detect circles
     t_procFrame = Thread( target=procFrame, args=( bgr2gray, Q_procFrame ) )
-    t_procFrame.daemon = True
     t_procFrame.start()
 
     # Check if queue has something available for retrieval
@@ -254,12 +304,11 @@ while True:
     
     # Start thread to scan for circles
     t_scan4circles = Thread( target=scan4circles, args=( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ) )
-    t_scan4circles.daemon = True
     t_scan4circles.start()
 
     # Check if queue has something available for retrieval
     if Q_scan4circles.qsize() > 0:
-        output, (x_ROI, y_ROI, r_ROI) = Q_scan4circles.get()
+        output = Q_scan4circles.get()
 
     # If debug flag is invoked
     if args["debug"]:

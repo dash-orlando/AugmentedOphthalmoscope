@@ -33,7 +33,6 @@ print __doc__
 
 # Import necessary modules
 import  numpy, cv2, argparse                                # Various Stuff
-import  RPi.GPIO                    as      GPIO            # GPIO pins for peripherals (i.e LED)
 from    imutils.video.pivideostream import  PiVideoStream   # Import threaded PiCam module
 from    imutils.video               import  FPS             # Benchmark FPS
 from    time                        import  sleep           # Sleep for stability
