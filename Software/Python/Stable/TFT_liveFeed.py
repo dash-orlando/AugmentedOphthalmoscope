@@ -32,7 +32,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "TFT Live Feed Ver0.9.6
+ver = "TFT Live Feed Ver0.9.6"
 print __doc__
 
 # Import necessary modules
@@ -163,8 +163,8 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
     # Error handling in case a non-allowable integer is chosen (1)
     try:
         # Scan for circles
-        circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, 14, 396,
-                                    316, 236, 1, 14 )
+        circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, 34, 396,
+                                    316, 236, 7, 14 )
 
         # If circles are found draw them
         if circles is not None:
@@ -253,7 +253,7 @@ if ToF.is_open == False:
         # If debug flag is invoked
         if args["debug"]:
             print( inChar )
-    print( "Distance Readings Initiated" )
+    print( fullStamp() + " Distance Readings Initiated" )
 
 ToF_Dist = 0    # Initialize to OFF
 

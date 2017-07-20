@@ -234,11 +234,11 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
         print( fullStamp() + " Resetting Trackbars..." )
 
         # Reset trackbars
-        cv2.createTrackbar( "dp"        , ver, 14   , 50 , placeholder ) #8
+        cv2.createTrackbar( "dp"        , ver, 34   , 50 , placeholder ) #14
         cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder )
-        cv2.createTrackbar( "param1"    , ver, 326  , 750, placeholder ) #154
-        cv2.createTrackbar( "param2"    , ver, 231  , 750, placeholder ) #99
-        cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder )
+        cv2.createTrackbar( "param1"    , ver, 316  , 750, placeholder ) #326
+        cv2.createTrackbar( "param2"    , ver, 236  , 750, placeholder ) #231
+        cv2.createTrackbar( "minRadius" , ver, 7    , 200, placeholder ) #1
         cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder )
 
         print( fullStamp() + " Success" )
@@ -274,11 +274,11 @@ cv2.namedWindow( ver )
 cv2.setMouseCallback( ver, control )
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar( "dp"        , ver, 14   , 50 , placeholder ) #8
+cv2.createTrackbar( "dp"        , ver, 34   , 50 , placeholder ) #14
 cv2.createTrackbar( "minDist"   , ver, 396  , 750, placeholder )
 cv2.createTrackbar( "param1"    , ver, 316  , 750, placeholder ) #326
 cv2.createTrackbar( "param2"    , ver, 236  , 750, placeholder ) #231
-cv2.createTrackbar( "minRadius" , ver, 1    , 200, placeholder )
+cv2.createTrackbar( "minRadius" , ver, 7    , 200, placeholder ) #1
 cv2.createTrackbar( "maxRadius" , ver, 14   , 250, placeholder )
 
 # Setup window and trackbars for AI view
@@ -302,7 +302,7 @@ if ToF.is_open == False:
         # If debug flag is invoked
         if args["debug"]:
             print( inChar )
-    print( "Distance Readings Initiated" )
+    print( fullStamp() + " Distance Readings Initiated" )
 
 ToF_Dist = 0    # Initialize to OFF
 
