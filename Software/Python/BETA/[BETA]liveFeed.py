@@ -329,9 +329,9 @@ if args["debug"]:
     fps = FPS().start()
 
 # Windows to visualize RGB channels
-cv2.namedWindow( "B" )
-cv2.namedWindow( "G" )
-cv2.namedWindow( "R" )
+cv2.namedWindow( "H" )
+cv2.namedWindow( "S" )
+cv2.namedWindow( "V" )
 # ************************************************************************
 # =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
@@ -341,7 +341,7 @@ while True:
     
     # Get image from stream
     frame = stream.read()[36:252, 48:336]
-
+    
     # Add a 4th dimension (Alpha) to the captured frame
     (h, w) = frame.shape[:2]
     frame = numpy.dstack( [frame, numpy.ones( ( h, w ), dtype="uint8" ) * 255] )
@@ -350,43 +350,40 @@ while True:
     # Create an overlay layer
     overlay = numpy.zeros( ( h, w, 4 ), "uint8" )
 
-    # Split frame into multiple channels
-    B, G, R, A = frame[:,:,0], frame[:,:,1], frame[:,:,2], frame[:,:,3]
-    M = numpy.maximum( numpy.maximum( R, G ), B )
-    R[ R < M]=0
-    G[ G < M]=0
-    B[ B < M]=0
-    cv2.imshow("B", B)
-    cv2.imshow("G", G)
-    cv2.imshow("R", R)
+    # Split frame into HSV channels
+    bgr2gray = cv2.cvtColor( frame, cv2.COLOR_BGR2HSV )
+    H, S, V = cv2.split( bgr2gray )
+    cv2.imshow("H", H)
+    cv2.imshow("S", S)
+    cv2.imshow("V", V)
     
     # Start thread to process image and apply required filters to detect circles
     # B Thread
-    t_B_procFrame = Thread( target=procFrame, args=( B, Q_B_procFrame ) )
+    t_B_procFrame = Thread( target=procFrame, args=( H, Q_B_procFrame ) )
     t_B_procFrame.start()
     # G Thread
-    t_G_procFrame = Thread( target=procFrame, args=( G, Q_G_procFrame ) )
+    t_G_procFrame = Thread( target=procFrame, args=( S, Q_G_procFrame ) )
     t_G_procFrame.start()
     # R Thread
-    t_R_procFrame = Thread( target=procFrame, args=( R, Q_R_procFrame ) )
+    t_R_procFrame = Thread( target=procFrame, args=( V, Q_R_procFrame ) )
     t_R_procFrame.start()
 
     # Check if queue has something available for retrieval
     if Q_B_procFrame.qsize() > 0:
-        B = Q_B_procFrame.get()
+        H = Q_B_procFrame.get()
 
     if Q_G_procFrame.qsize() > 0:
-        G = Q_G_procFrame.get()
+        S = Q_G_procFrame.get()
 
     if Q_R_procFrame.qsize() > 0:
-        R = Q_R_procFrame.get()
+        V = Q_R_procFrame.get()
 
     
     # Combine images using bitwise AND to avoid over saturation
-    B = cv2.bitwise_and( B, B, mask=A )
-    G = cv2.bitwise_and( G, G, mask=A )
-    R = cv2.bitwise_and( R, R, mask=A )
-    frame = cv2.merge( [B, G, R, A] )
+    #H = cv2.bitwise_and( H, H)
+    #S = cv2.bitwise_and( S, S)
+    #6V = cv2.bitwise_and( V, V)
+    frame = cv2.merge( [H, S, V] )
     
     # Convert into grayscale because HoughCircle only accepts grayscale images
     bgr2gray = cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY )
@@ -414,14 +411,15 @@ while True:
 
     # Live feed display toggle
     if normalDisplay:
-        cv2.imshow("B", B)
-        cv2.imshow("G", G)
-        cv2.imshow("R", R)
         cv2.imshow(ver, output)
         cv2.imshow( "AI_View", bgr2gray )
         key = cv2.waitKey(1) & 0xFF
     elif not(normalDisplay):
+        cv2.imshow("H", H)
+        cv2.imshow("S", S)
+        cv2.imshow("V", V)
         cv2.imshow(ver, frame)
+        cv2.imshow( "AI_View", bgr2gray )
         key = cv2.waitKey(1) & 0xFF
 
 # ************************************************************************
