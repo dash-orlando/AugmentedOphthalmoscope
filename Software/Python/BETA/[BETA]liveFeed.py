@@ -34,7 +34,6 @@ from    threading                   import  Thread          # Used to thread pro
 from    Queue                       import  Queue           # Used to queue input/output
 from    timeStamp                   import  fullStamp       # Show date/time on console output
 from    usbProtocol                 import  createUSBPort   # Create USB Port
-from    multiprocessing.pool        import  ThreadPool
 
 # ************************************************************************
 # =====================> CONSTRUCT ARGUMENT PARSER <=====================
@@ -99,6 +98,7 @@ def control( event, x, y, flags, param ):
             
         except Exception as e:
             print( "Caught Error: %s" %str( type(e) ) )
+            print( "Error Arguments: %s" %str(e.args) )
 
         finally:
             stream.stop()                   # Stop capturing frames from stream
@@ -121,7 +121,7 @@ def placeholder( x ):
 # ****************************************************
 # Define function to apply required filters to image
 # ****************************************************
-def procFrame(bgr2gray):#, Q_procFrame):
+def procFrame(bgr2gray, Q_procFrame):
 
     # Get trackbar position and reflect its threshold type and values
     threshType = cv2.getTrackbarPos( "Type:\n0.MEAN_Binary\n1.GAUSSIAN_Binary\n2.MEAN_BinaryInv\n3.GAUSSIAN_BinaryInv\n4.OTSU",
@@ -158,7 +158,7 @@ def procFrame(bgr2gray):#, Q_procFrame):
     bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
 
     # Place processed image in queue for retrieval
-    #Q_procFrame.put(bgr2gray)
+    Q_procFrame.put(bgr2gray)
     return bgr2gray
 
 
@@ -249,7 +249,7 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
         print( fullStamp() + " Resetting Trackbars..." )
 
         # Reset trackbars
-        cv2.createTrackbar( "dp"        , ver, 12   , 50 , placeholder ) #34
+        cv2.createTrackbar( "dp"        , ver, 22   , 50 , placeholder ) #34
         cv2.createTrackbar( "minDist"   , ver, 454  , 750, placeholder ) #396
         cv2.createTrackbar( "param1"    , ver, 403  , 750, placeholder ) #316
         cv2.createTrackbar( "param2"    , ver, 51   , 750, placeholder ) #236
@@ -289,7 +289,7 @@ cv2.namedWindow( ver )
 cv2.setMouseCallback( ver, control )
 
 # Create a track bar for HoughCircles parameters
-cv2.createTrackbar( "dp"        , ver, 12   , 50 , placeholder ) #34
+cv2.createTrackbar( "dp"        , ver, 22   , 50 , placeholder ) #34
 cv2.createTrackbar( "minDist"   , ver, 454  , 750, placeholder ) #396
 cv2.createTrackbar( "param1"    , ver, 403  , 750, placeholder ) #316
 cv2.createTrackbar( "param2"    , ver, 51   , 750, placeholder ) #236
@@ -340,12 +340,11 @@ if args["debug"]:
     print( fullStamp() + " [INFO] Debug Mode: ON" )
     fps = FPS().start()
 
-# Windows to visualize RGB channels
-cv2.namedWindow( "H" )
-cv2.namedWindow( "S" )
-cv2.namedWindow( "V" )
+# Windows to visualize HSV channels
+##cv2.namedWindow( "H" )
+##cv2.namedWindow( "S" )
+##cv2.namedWindow( "V" )
 
-pool = ThreadPool(processes=3)
 # ************************************************************************
 # =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
@@ -366,38 +365,36 @@ while True:
 
     # Split frame into HSV channels
     H, S, V = cv2.split( cv2.cvtColor( frame, cv2.COLOR_BGR2HSV ) )
-    cv2.imshow("H", H)
-    cv2.imshow("S", S)
-    cv2.imshow("V", V)
-
-    res = pool.map( procFrame, [H, S, V] )
+##    cv2.imshow("H", H)
+##    cv2.imshow("S", S)
+##    cv2.imshow("V", V)
     
     # Start thread to process image and apply required filters to detect circles
-##    # H Thread
-##    t_H_procFrame = Thread( target=procFrame, args=( H, Q_H_procFrame ) )
-##    t_H_procFrame.start()
-##    # S Thread
-##    t_S_procFrame = Thread( target=procFrame, args=( S, Q_S_procFrame ) )
-##    t_S_procFrame.start()
-##    # V Thread
-##    t_V_procFrame = Thread( target=procFrame, args=( V, Q_V_procFrame ) )
-##    t_V_procFrame.start()
-##
-##    # Check if queue has something available for retrieval
-##    if Q_H_procFrame.qsize() > 0:
-##        H = Q_H_procFrame.get()
-##
-##    if Q_S_procFrame.qsize() > 0:
-##        S = Q_S_procFrame.get()
-##
-##    if Q_V_procFrame.qsize() > 0:
-##        V = Q_V_procFrame.get()
+    # H Thread
+    t_H_procFrame = Thread( target=procFrame, args=( H, Q_H_procFrame ) )
+    t_H_procFrame.start()
+    # S Thread
+    t_S_procFrame = Thread( target=procFrame, args=( S, Q_S_procFrame ) )
+    t_S_procFrame.start()
+    # V Thread
+    t_V_procFrame = Thread( target=procFrame, args=( V, Q_V_procFrame ) )
+    t_V_procFrame.start()
+
+    # Check if queue has something available for retrieval
+    if Q_H_procFrame.qsize() > 0:
+        H = Q_H_procFrame.get()
+
+    if Q_S_procFrame.qsize() > 0:
+        S = Q_S_procFrame.get()
+
+    if Q_V_procFrame.qsize() > 0:
+        V = Q_V_procFrame.get()
 
     
     # Combine images using bitwise AND to avoid over saturation
-    #H = cv2.bitwise_and( H, H)
-    #S = cv2.bitwise_and( S, S)
-    #6V = cv2.bitwise_and( V, V)
+    H = cv2.bitwise_and( H, H)
+    S = cv2.bitwise_and( S, S)
+    V = cv2.bitwise_and( V, V)
     frame = cv2.merge( [H, S, V] )
     
     # Convert into grayscale because HoughCircle only accepts grayscale images
@@ -430,9 +427,9 @@ while True:
         cv2.imshow( "AI_View", bgr2gray )
         key = cv2.waitKey(1) & 0xFF
     elif not(normalDisplay):
-        cv2.imshow("H", H)
-        cv2.imshow("S", S)
-        cv2.imshow("V", V)
+##        cv2.imshow("H", H)
+##        cv2.imshow("S", S)
+##        cv2.imshow("V", V)
         cv2.imshow(ver, frame)
         cv2.imshow( "AI_View", bgr2gray )
         key = cv2.waitKey(1) & 0xFF
