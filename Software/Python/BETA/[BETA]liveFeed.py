@@ -5,16 +5,17 @@
 *   -a/--alpha: Specify transperancy level (0.0 - 1.0)
 *   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY!!!)
 *
-* VERSION: 0.9.7
+* VERSION: 0.9.7.1
 *   - Uses adaptive thresholding instead of global thresholding
-*   - Split HSV channels and perform preprocessing on them seperately 
+*   - Split HSV channels and perform preprocessing on them seperately
+*   - Perform inpainting to remove glare from LED
 *
 * KNOWN ISSUES:
 *   - HUGE drop in FPS
 *
 * AUTHOR:   Mohammad Odeh
 * WRITTEN:  Aug  1st, 2016
-* UPDATED:  Jul 26th, 2017
+* UPDATED:  AUG 16th, 2017
 * ----------------------------------------------------------
 * ----------------------------------------------------------
 *
@@ -22,7 +23,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.9.7"
+ver = "Live Feed Ver0.9.7.1"
 print __doc__
 
 # Import necessary modules
@@ -261,6 +262,34 @@ def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
         # Exit function and re-loop
         return()
 
+def remove_glare(im):
+    
+    # prepare mask - square of width 'w' centered at (x,y) which is the center of the bright spots
+    length = 150 #192
+    height = 150
+    w = 20
+    thresh = 0.9
+    radius = w/2
+
+    # Make the numpy array (image) writeable
+    im.setflags(write=1)
+    
+    # Generate binary image mask - dilated circles around the saturated bright spots at the center
+    temp = im[height-w:height+w, length-w:length+w, 1]  # Crop image and cast with a single channel
+    _, temp_mask = cv2.threshold(temp, thresh*256, 255, cv2.THRESH_BINARY)
+    kernel = numpy.zeros((2*radius+1, 2*radius+1), 'uint8')
+    y,x = numpy.ogrid[-radius:radius+1, -radius:radius+1]
+    mask = x**2 + y**2 <= radius**2
+    kernel[mask] = 1
+    temp_mask = cv2.dilate(temp_mask, kernel)
+
+    # perform the inpainting...
+    im[height-w:height+w, length-w:length+w,:] = cv2.inpaint( im[height-w:height+w, length-w:length+w,:],
+                                                              temp_mask, 1, cv2.INPAINT_NS )#TELEA)
+
+    # return file
+    return im
+
 # ************************************************************************
 # ===========================> SETUP PROGRAM <===========================
 # ************************************************************************
@@ -279,7 +308,7 @@ G = cv2.bitwise_and( G, G, mask=A )
 R = cv2.bitwise_and( R, R, mask=A )
 overlayImg = cv2.merge( [B, G, R, A] )
 
-# Setup camera
+# Setup camera (x,y)
 stream = PiVideoStream( resolution=(384, 288) ).start()
 normalDisplay = True
 sleep( 1.0 )
@@ -352,8 +381,9 @@ if args["debug"]:
 # Infinite loop
 while True:
     
-    # Get image from stream
+    # Get image from stream [y:x]
     frame = stream.read()[36:252, 48:336]
+    frame = remove_glare(frame)
     
     # Add a 4th dimension (Alpha) to the captured frame
     (h, w) = frame.shape[:2]
