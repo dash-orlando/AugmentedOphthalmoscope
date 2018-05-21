@@ -1,21 +1,26 @@
 '''
-* NOTE: If overlay is NOT specified a sample overlay is chosen by default
+* NOTE: Version 1.0b is rewritten from scratch to improve on the
+*       shortcomings of the previous version (mainly too many false
+*       positives & general instability).
+*       Main change was in the identification method, which now uses
+*       findContours() instead of HoughCircles().
+*
 * USEFUL ARGUMENTS:
 *   -o/--overlay: Specify overlay file
-*   -a/--alpha: Specify transperancy level (0.0 - 1.0)
-*   -d/--debug: toggle to enable debugging mode (DEVELOPER ONLY!!!)
+*   -a/--alpha  : Specify transperancy level (0.0 - 1.0)
+*   -d/--debug  : Enable debugging
 *
-* VERSION: 0.9.7.1
-*   - Uses adaptive thresholding instead of global thresholding
-*   - Split HSV channels and perform preprocessing on them seperately
-*   - Perform inpainting to remove glare from LED
+* VERSION: 1.0b
+*   - ADDED   : Initial release 
 *
 * KNOWN ISSUES:
-*   - HUGE drop in FPS
+*   - Code is VERY buggy and lacks many of the previous
+*     functionalities (i.e overlays, threading, etc...)
 *
-* AUTHOR:   Mohammad Odeh
-* WRITTEN:  Aug  1st, 2016
-* UPDATED:  AUG 16th, 2017
+* AUTHOR                    :   Mohammad Odeh
+* WRITTEN                   :   Aug   1st, 2016 Year of Our Lord
+* LAST CONTRIBUTION DATE    :   May. 21st, 2018 Year of Our Lord
+*
 * ----------------------------------------------------------
 * ----------------------------------------------------------
 *
@@ -23,21 +28,22 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver0.9.7.1"
+ver = "Live Feed Ver1.0b"
 print __doc__
 
-# Import necessary modules
-import  numpy, cv2, argparse                                # Various Stuff
-from    imutils.video.pivideostream import  PiVideoStream   # Import threaded PiCam module
-from    imutils.video               import  FPS             # Benchmark FPS
-from    time                        import  sleep           # Sleep for stability
-from    threading                   import  Thread          # Used to thread processes
-from    Queue                       import  Queue           # Used to queue input/output
-from    timeStamp                   import  fullStamp       # Show date/time on console output
-from    usbProtocol                 import  createUSBPort   # Create USB Port
+import  cv2, argparse                                                   # Various Stuff
+import  numpy                                               as  np      # Image manipulation
+from    timeStamp                   import  fullStamp       as  FS      # Show date/time on console output
+from    imutils.video.pivideostream import  PiVideoStream               # Import threaded PiCam module
+from    imutils.video               import  FPS                         # Benchmark FPS
+from    time                        import  sleep                       # Sleep for stability
+from    threading                   import  Thread                      # Used to thread processes
+from    Queue                       import  Queue                       # Used to queue input/output
+from    usbProtocol                 import  createUSBPort               # Create USB Port
+from    LEDRing                     import  *                           # Let there be light
 
 # ************************************************************************
-# =====================> CONSTRUCT ARGUMENT PARSER <=====================
+# =====================> CONSTRUCT ARGUMENT PARSER <=====================*
 # ************************************************************************
 ap = argparse.ArgumentParser()
 
@@ -51,585 +57,247 @@ ap.add_argument("-d", "--debug", action='store_true',
 args = vars( ap.parse_args() )
 
 args["debug"] = True
+
 # ************************************************************************
 # =====================> DEFINE NECESSARY FUNCTIONS <=====================
 # ************************************************************************
-
-# *************************************
-# Define right/left mouse click events
-# *************************************
 def control( event, x, y, flags, param ):
+    '''
+    Left/right click mouse events
+    '''
     global normalDisplay
     
     # Right button shuts down program
-    if event == cv2.EVENT_RBUTTONDOWN:
-        # If debug flag is invoked
-        if args["debug"]:
-            fps.stop()
-            print( fullStamp() + " [INFO] Elapsed time: {:.2f}".format(fps.elapsed()) )
-            print( fullStamp() + " [INFO] Approx. FPS : {:.2f}".format(fps.fps()) )
+    if( event == cv2.EVENT_RBUTTONDOWN ):
 
         # Do some shutdown clean up
         try:
-            if ( t_scan4circles.isAlive() ):
-                t_scan4circles.join(5.0)    # Terminate circle scanning thread
-                if args["debug"]:           # If debug flag is invoked, display message
-                    print( fullStamp() + " scan4circles: Terminated" )
-
-            if ( t_H_procFrame.isAlive() ):
-                t_H_procFrame.join(5.0)     # Terminate H image processing thread
-                if args["debug"]:           # If debug flag is invoked, display message
-                    print( fullStamp() + " procFrame: Terminated" )
-
-            if ( t_S_procFrame.isAlive() ):
-                t_S_procFrame.join(5.0)     # Terminate S image processing thread
-                if args["debug"]:           # If debug flag is invoked, display message
-                    print( fullStamp() + " procFrame: Terminated" )
-
-            if ( t_V_procFrame.isAlive() ):
-                t_V_procFrame.join(5.0)     # Terminate V image processing thread
-                if args["debug"]:           # If debug flag is invoked, display message
-                    print( fullStamp() + " procFrame: Terminated" )
+            colorWipe(strip, Color(0, 0, 0, 0), 0)                      # Turn OFF LED ring
+            stream.stop()                                               # Stop capturing frames from stream
+            cv2.destroyAllWindows()                                     # Close any open windows
             
-            if ( t_getDist.isAlive() ):
-                t_getDist.join(10.)         # Terminate serial port pooling thread
-                if args["debug"]:           # If debug flag is invoked, display message
-                    print( fullStamp() + " getDist: Terminated" )
-            ToF.close()                     # Close port
-            
-        except Exception as e:
-            print( "Caught Error: %s" %str( type(e) ) )
-            print( "Error Arguments: %s" %str(e.args) )
-
-        finally:
-            stream.stop()                   # Stop capturing frames from stream
-            cv2.destroyAllWindows()         # Close any open windows
-            quit()                          # Shutdown python interpreter
-        
-    # Left button toggles display
-    elif event == cv2.EVENT_LBUTTONDOWN:
-        normalDisplay=not( normalDisplay )
-
-
-# ****************************************************
-# Define a placeholder function for trackbar. This is
-# needed for the trackbars to function properly.
-# ****************************************************
-def placeholder( x ):
-    pass
-
-
-# ****************************************************
-# Define function to apply required filters to image
-# ****************************************************
-def procFrame(bgr2gray, Q_procFrame):
-
-    # Get trackbar position and reflect its threshold type and values
-    threshType = cv2.getTrackbarPos( "Type:\n0.MEAN_Binary\n1.GAUSSIAN_Binary\n2.MEAN_BinaryInv\n3.GAUSSIAN_BinaryInv\n4.OTSU",
-                                     "AI_View")
-
-    maxValue        = cv2.getTrackbarPos( "maxValue"    , "AI_View")
-    blockSize       = cv2.getTrackbarPos( "blockSize"   , "AI_View")
-    cte             = cv2.getTrackbarPos( "cte"         , "AI_View")
-    GaussianBlur    = cv2.getTrackbarPos( "GaussianBlur", "AI_View")
-
-    # blockSize must be an odd number
-    if blockSize%2 == 0:
-        blockSize += 1 
-
-    # Dissolve noise while maintaining edge sharpness 
-    bgr2gray = cv2.bilateralFilter( bgr2gray, 5, 17, 17 ) #( bgr2gray, 11, 17, 17 )
-    bgr2gray = cv2.GaussianBlur( bgr2gray, (5, 5), GaussianBlur ) #1
-
-    # Threshold any color that is not black to white
-    if threshType == 0:
-        thresholded = cv2.adaptiveThreshold( bgr2gray, maxValue, cv2.ADAPTIVE_THRESH_MEAN_C,
-                                             cv2.THRESH_BINARY, blockSize, cte )
-    elif threshType == 1:
-        thresholded = cv2.adaptiveThreshold( bgr2gray, maxValue, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                             cv2.THRESH_BINARY, blockSize, cte )
-    elif threshType == 2:
-        thresholded = cv2.adaptiveThreshold( bgr2gray, maxValue, cv2.ADAPTIVE_THRESH_MEAN_C,
-                                             cv2.THRESH_BINARY_INV, blockSize, cte )
-    elif threshType == 3:
-        thresholded = cv2.adaptiveThreshold( bgr2gray, maxValue, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                             cv2.THRESH_BINARY_INV, blockSize, cte )
-
-    kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
-    bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
-
-    # Place processed image in queue for retrieval
-    Q_procFrame.put(bgr2gray)
-    return bgr2gray
-
-
-# ******************************************************
-# Define a function to get distance from ToF sensor
-# ******************************************************
-def getDist():
-
-    # No need to reevaluate in the main function at every iteration
-    global ToF_Dist
-
-    # Listen to serial port as long as port is open
-    while ( ToF.is_open ):
-
-        # Do the reading iff there is something available at serial port
-        if ToF.in_waiting > 0:
-            ToF_Dist = int( (ToF.read(size=1).strip('\0')).strip('\n') )
-            # If debug flag is invoked
-            if args["debug"]:
-                print( ToF_Dist )
-        else:
+        except Exception as instance:
+            print( "{} Error caught in control()".format(FS()) )
+            print( "{0} {1}".format(FS(), type(instance)) )
             pass
 
+        finally: 
+            quit()                                                      # Shutdown python interpreter
+     
+    # Left button toggles display
+    elif( event == cv2.EVENT_LBUTTONDOWN ):
+        normalDisplay = not( normalDisplay )
 
-# ******************************************************
-# Define a function to scan for circles from camera feed
-# ******************************************************
-def scan4circles( bgr2gray, overlay, overlayImg, frame, Q_scan4circles ):
 
+# ------------------------------------------------------------------------
+
+def placeholder( x ):
+    '''
+    Place holder function for trackbars. This is required
+    for the trackbars to function properly.
+    '''
+    
+    pass
+
+# ------------------------------------------------------------------------
+
+def procFrame( image ):
+    '''
+    Process frame by applying a bilateral filter, a Gaussian blur,
+    and an adaptive threshold + some post-processing
+
+    INPUTS:-
+        - image: Grayscale image to be processed
+
+    OUTPUT:-
+        - bgr2gray: Processed image
+    '''
+
+    try:
+        bgr2gray = cv2.inRange(image, lower_bound, upper_bound)
+        # Get trackbar position and reflect its threshold type and values
+        threshType = cv2.getTrackbarPos( "Type:\n0.MEAN_Binary\n1.GAUSSIAN_Binary\n2.MEAN_BinaryInv\n3.GAUSSIAN_BinaryInv\n4.OTSU",
+                                         "AI_View")
+        maxValue        = cv2.getTrackbarPos( "maxValue"    , "AI_View")
+        blockSize       = cv2.getTrackbarPos( "blockSize"   , "AI_View")
+        cte             = cv2.getTrackbarPos( "cte"         , "AI_View")
+        GaussianBlur    = cv2.getTrackbarPos( "GaussianBlur", "AI_View")
+
+        # blockSize must be an odd number
+        if blockSize%2 == 0:
+            blockSize += 1 
+
+        # Dissolve noise while maintaining edge sharpness 
+        bgr2gray = cv2.bilateralFilter( bgr2gray, 5, 17, 17 ) #( bgr2gray, 11, 17, 17 )
+        bgr2gray = cv2.GaussianBlur( bgr2gray, (5, 5), GaussianBlur ) #1
+
+        # Threshold any color that is not black to white (or vice versa)
+        if( threshType == 0 ):
+            thresholded = cv2.adaptiveThreshold( bgr2gray, maxValue,
+                                                 cv2.ADAPTIVE_THRESH_MEAN_C,
+                                                 cv2.THRESH_BINARY, blockSize, cte )
+        elif( threshType == 1 ):
+            thresholded = cv2.adaptiveThreshold( bgr2gray, maxValue,
+                                                 cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                 cv2.THRESH_BINARY, blockSize, cte )
+        elif( threshType == 2 ):
+            thresholded = cv2.adaptiveThreshold( bgr2gray, maxValue,
+                                                 cv2.ADAPTIVE_THRESH_MEAN_C,
+                                                 cv2.THRESH_BINARY_INV, blockSize, cte )
+        elif( threshType == 3 ):
+            thresholded = cv2.adaptiveThreshold( bgr2gray, maxValue,
+                                                 cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                 cv2.THRESH_BINARY_INV, blockSize, cte )
+
+        kernel = np.ones((3, 3), np.uint8)
+
+        # Use erosion and dilation combination to eliminate false positives. 
+        bgr2gray = cv2.erode ( thresholded, kernel, iterations=6 )          # Erode over 6 passes
+        bgr2gray = cv2.dilate( bgr2gray, kernel, iterations=3 )             # Dilate over 3 passes
+
+        morphed  = cv2.morphologyEx(image, cv2.MORPH_GRADIENT, kernel)      # Morph image for shits and gigs
+        
+        return( bgr2gray, morphed )                                         # Return
+    
+    except:
+        cv2.createTrackbar( "maxValue"      , "AI_View", 245, 255, placeholder ) #138
+        cv2.createTrackbar( "blockSize"     , "AI_View", 254, 254, placeholder ) #180
+        cv2.createTrackbar( "cte"           , "AI_View", 65 , 100, placeholder ) #59
+        cv2.createTrackbar( "GaussianBlur"  , "AI_View", 12 , 50 , placeholder ) #0
+# ------------------------------------------------------------------------
+
+def scan4circles( bgr2gray, overlay, overlayImg, frame ):
+    '''
+    Scan for circles within an image
+
+    INPUTS:
+        - bgr2gray  : Processed grayscale image
+        - overlay   : The overlay empty frame
+        - overlayImg: The overlay image
+        - frame     : Frame to which we should attach overlay
+
+    OUTPUT:
+        - output    : Image with/without overlay
+                (depends whether circles were found or not)
+    '''
+    
     # Error handling in case a non-allowable integer is chosen (1)
     try:
-        # Scan for circles
-        circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, dp, minDist,
-                                    param1, param2, minRadius, maxRadius )
-
-        '''
-        Experimental values:            Original Values:
-        dp = 9                          dp = 9
-        minDist = 396                   minDist = 396
-        param1 = 191                    param1 = 191
-        param2 = 43                     param2 = 43
-        minRadius = 10                  minRadius = 1
-        maxRadius = 30                  maxRadius = 16
-        '''
+        r_min   = cv2.getTrackbarPos( "minRadius", ver )                    # Get current r_min ...
+        r_max   = cv2.getTrackbarPos( "maxRadius", ver )                    # and r_max values
+         
+        im2, contours, hierarchy = cv2.findContours( bgr2gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE )
 
         # If circles are found draw them
-        if circles is not None:
-            circles = numpy.round( circles[0,:] ).astype( "int" )
-            for ( x, y, r ) in circles:
+        if contours is not None:
+            for c in contours:                                              # Iterate over all contours
+                (x,y),r = cv2.minEnclosingCircle(c)                         # 
+                center = (int(x),int(y))                                    # Get circle's center...
+                r = int(r)                                                  # and radius
+                
+                if( r_min <= r and r <= r_max ):                            # Check if within desired limit
+                    output = cv2.addWeighted( overlay,                      # Join overlay with the...
+                                              args["alpha"],                # livefeed frame and apply...
+                                              frame, 1.0, 0 )               # specified alpha levels.
+                    cv2.circle( frame, center, r, (0, 255, 0), 2 )          # draw a circle
 
-                # Resize watermark image
-                resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
-                                      interpolation = cv2.INTER_AREA )
-
-                # Retrieve overlay location
-                y1 = y-r
-                y2 = y+r
-                x1 = x-r
-                x2 = x+r
-
-            # If within scan distance display found circles
-            if ToF_Dist == 1:
-                # Check whether overlay location is within window resolution
-                if x1>0 and x1<w and x2>0 and x2<w and y1>0 and y1<h and y2>0 and y2<h:
-                    # Place overlay image inside circle
-                    overlay[ y1:y2, x1:x2 ] = resized
-
-                    # Join overlay with live feed and apply specified transparency level
-                    output = cv2.addWeighted( overlay, args["alpha"], frame, 1.0, 0 )
-                    
-                    # If debug flag is invoked
-                    if args["debug"]:
-                        # Draw circle
-                        cv2.circle( output, ( x, y ), r, ( 0, 255, 0 ), 4 )
-            
-                # If not within window resolution keep looking
                 else:
                     output = frame
+        else:
+            output = frame
 
-                # Place output in queue for retrieval by main thread
-                if Q_scan4circles.full() is False:
-                    Q_scan4circles.put( output )
+        return( output )                            
 
     # Error handling in case a non-allowable integer is chosen (2)
     except Exception as instance:
-        print( fullStamp() + " Exception or Error Caught" )
-        print( fullStamp() + " Error Type %s" %str(type(instance)) )
-        print( fullStamp() + " Resetting Trackbars..." )
+##        print( "{} Error caught in scan4circles()".format(FS()) )
+##        print( "{0} {1}".format(FS(), instance) )
 
         # Reset trackbars
-        cv2.createTrackbar( "dp"        , ver, 22   , 50 , placeholder ) #34
-        cv2.createTrackbar( "minDist"   , ver, 454  , 750, placeholder ) #396
-        cv2.createTrackbar( "param1"    , ver, 403  , 750, placeholder ) #316
-        cv2.createTrackbar( "param2"    , ver, 51   , 750, placeholder ) #236
-        cv2.createTrackbar( "minRadius" , ver, 8    , 200, placeholder ) #7
-        cv2.createTrackbar( "maxRadius" , ver, 17   , 250, placeholder ) #14
-
-        print( fullStamp() + " Success" )
+        cv2.createTrackbar( "minRadius" , ver, 15   , 150, placeholder ) #7
+        cv2.createTrackbar( "maxRadius" , ver, 25   , 150, placeholder ) #14
 
         # Exit function and re-loop
-        return()
-
-def remove_glare(im):
+        return( None )
     
-    # prepare mask - square of width 'w' centered at (x,y) which is the center of the bright spots
-    length = 150 #192
-    height = 150
-    w = 20
-    thresh = 0.9
-    radius = w/2
-
-    # Make the numpy array (image) writeable
-    im.setflags(write=1)
-    
-    # Generate binary image mask - dilated circles around the saturated bright spots at the center
-    temp = im[height-w:height+w, length-w:length+w, 1]  # Crop image and cast with a single channel
-    _, temp_mask = cv2.threshold(temp, thresh*256, 255, cv2.THRESH_BINARY)
-    kernel = numpy.zeros((2*radius+1, 2*radius+1), 'uint8')
-    y,x = numpy.ogrid[-radius:radius+1, -radius:radius+1]
-    mask = x**2 + y**2 <= radius**2
-    kernel[mask] = 1
-    temp_mask = cv2.dilate(temp_mask, kernel)
-
-    # perform the inpainting...
-    im[height-w:height+w, length-w:length+w,:] = cv2.inpaint( im[height-w:height+w, length-w:length+w,:],
-                                                              temp_mask, 1, cv2.INPAINT_NS )#TELEA)
-
-    # return file
-    return im
 
 # ************************************************************************
 # ===========================> SETUP PROGRAM <===========================
 # ************************************************************************
 
 # Check whether an overlay is specified
-if args["overlay"] is not None:
-    overlayImg = cv2.imread( args["overlay"], cv2.IMREAD_UNCHANGED )
-else:
-    overlayImg = cv2.imread( "Overlay.png"  , cv2.IMREAD_UNCHANGED )
+if( args["overlay"] != None ):                                              # If overlay is defined ...
+    overlayImg = cv2.imread( args["overlay"], cv2.IMREAD_UNCHANGED )        # Load specific overlay
+else:                                                                       # Else ...
+    overlayImg = cv2.imread( "Overlay.png"  , cv2.IMREAD_UNCHANGED )        # Load default overlay
 
 # Load overlay image with Alpha channel
-( wH, wW ) = overlayImg.shape[:2]
-( B, G, R, A ) = cv2.split( overlayImg )
-B = cv2.bitwise_and( B, B, mask=A )
-G = cv2.bitwise_and( G, G, mask=A )
-R = cv2.bitwise_and( R, R, mask=A )
-overlayImg = cv2.merge( [B, G, R, A] )
+( wH, wW ) = overlayImg.shape[:2]                                           # Get dimensions
+( B, G, R, A ) = cv2.split( overlayImg )                                    # Split into constituent channels
+B = cv2.bitwise_and( B, B, mask=A )                                         # Add the Alpha to the B channel
+G = cv2.bitwise_and( G, G, mask=A )                                         # Add the Alpha to the G channel
+R = cv2.bitwise_and( R, R, mask=A )                                         # Add the Alpha to the R channel
+overlayImg = cv2.merge( [B, G, R, A] )                                      # Finally, merge them back
 
 # Setup camera (x,y)
-stream = PiVideoStream( resolution=(384, 288) ).start()
-normalDisplay = True
-sleep( 1.0 )
+stream = PiVideoStream( resolution=(384, 288) ).start()                     # Start PiCam
+sleep( 0.25 )                                                               # Sleep for stability
+normalDisplay = True                                                        # Start with a normal display
+colorWipe(strip, Color(255, 255, 255, 255), 0)                              # Turn ON LED ring
 
-# Setup window and mouseCallback event
-cv2.namedWindow( ver )
-cv2.setMouseCallback( ver, control )
-
-# Create a track bar for HoughCircles parameters
-cv2.createTrackbar( "dp"        , ver, 22   , 50 , placeholder ) #34
-cv2.createTrackbar( "minDist"   , ver, 454  , 750, placeholder ) #396
-cv2.createTrackbar( "param1"    , ver, 403  , 750, placeholder ) #316
-cv2.createTrackbar( "param2"    , ver, 51   , 750, placeholder ) #236
-cv2.createTrackbar( "minRadius" , ver, 8    , 200, placeholder ) #7
-cv2.createTrackbar( "maxRadius" , ver, 17   , 250, placeholder ) #14
+# Setup main window
+cv2.namedWindow( ver )                                                      # Start a named window for output
+cv2.setMouseCallback( ver, control )                                        # Connect mouse events to actions
+cv2.createTrackbar( "minRadius" , ver, 15   , 150, placeholder )            # Trackbars for min and max radii
+cv2.createTrackbar( "maxRadius" , ver, 25   , 150, placeholder )            #     (used in scan4circles)
 
 # Setup window and trackbars for AI view
 cv2.namedWindow( "AI_View" )
 
 cv2.createTrackbar( "Type:\n0.MEAN_Binary\n1.GAUSSIAN_Binary\n2.MEAN_BinaryInv\n3.GAUSSIAN_BinaryInv\n4.OTSU",
-                    "AI_View", 2, 3, placeholder )
-cv2.createTrackbar( "maxValue"      , "AI_View", 250, 255, placeholder ) #138
-cv2.createTrackbar( "blockSize"     , "AI_View", 155, 254, placeholder ) #180
-cv2.createTrackbar( "cte"           , "AI_View", 56 , 100, placeholder ) #59
-cv2.createTrackbar( "GaussianBlur"  , "AI_View", 0  , 50 , placeholder ) #0
-
-# Initialize ToF sensor
-deviceName, port, baudRate = "VL6180", 0, 115200
-ToF = createUSBPort( deviceName, port, baudRate, 3 )
-if ToF.is_open == False:
-    ToF.open()
-    sleep( 0.5 )
-    inChar = (ToF.read(size=1).strip('\0')).strip('\n')
-    ToF.write('2')
-    while inChar is not 'y':
-        inChar = (ToF.read(size=1).strip('\0')).strip('\n')
-        # If debug flag is invoked
-        if args["debug"]:
-            print( inChar )
-    print( fullStamp() + " Distance Readings Initiated" )
-
-ToF_Dist = 0    # Initialize to OFF
-
-# Create a queue for retrieving data from thread
-Q_H_procFrame = Queue( maxsize=0 )
-Q_S_procFrame = Queue( maxsize=0 )
-Q_V_procFrame = Queue( maxsize=0 )
-Q_scan4circles= Queue( maxsize=0 )
-
-# Start listening to serial port
-t_getDist = Thread( target=getDist, args=() )
-t_getDist.daemon = True
-t_getDist.start()
-
-# If debug flag is invoked
-if args["debug"]:
-    # Start benchmark
-    print( fullStamp() + " [INFO] Debug Mode: ON" )
-    fps = FPS().start()
-
-# Windows to visualize HSV channels
-##cv2.namedWindow( "H" )
-##cv2.namedWindow( "S" )
-##cv2.namedWindow( "V" )
-
+                    "AI_View", 3, 3, placeholder )
+cv2.createTrackbar( "maxValue"      , "AI_View", 245, 255, placeholder )
+cv2.createTrackbar( "blockSize"     , "AI_View", 230, 254, placeholder )
+cv2.createTrackbar( "cte"           , "AI_View", 8  , 100, placeholder )
+cv2.createTrackbar( "GaussianBlur"  , "AI_View", 26 , 50 , placeholder )
+    
 # ************************************************************************
 # =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
+global lower_bound, upper_bound
 
-# Infinite loop
-while True:
-    
-    # Get image from stream [y:x]
-    frame = stream.read()[36:252, 48:336]
-    frame = remove_glare(frame)
+lower_bound = np.array([0,0,10])
+upper_bound = np.array([255,255,195])
+
+while( True ):
+    frame= stream.read()[36:252, 48:336]
+    image_ori = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+    image = frame
     
     # Add a 4th dimension (Alpha) to the captured frame
-    (h, w) = frame.shape[:2]
-    frame = numpy.dstack( [frame, numpy.ones( ( h, w ), dtype="uint8" ) * 255] )
-    output = frame
+    (h, w) = frame.shape[:2]                                        # Determine width and height
+    frame = np.dstack([ frame, np.ones((h, w),                      # Stack the arrays in sequence, 
+                                       dtype="uint8")*255 ])        # depth-wise ( along the z-axis )
 
     # Create an overlay layer
-    overlay = numpy.zeros( ( h, w, 4 ), "uint8" )
+    overlay = np.zeros( ( h, w, 4 ), "uint8" )                      # Empty np array w\ same dimensions as the frame
 
-    # Split frame into HSV channels
-    H, S, V = cv2.split( cv2.cvtColor( frame, cv2.COLOR_BGR2HSV ) )
-##    cv2.imshow("H", H)
-##    cv2.imshow("S", S)
-##    cv2.imshow("V", V)
+    mask, closing = procFrame( image )
     
-    # Start thread to process image and apply required filters to detect circles
-    # H Thread
-    t_H_procFrame = Thread( target=procFrame, args=( H, Q_H_procFrame ) )
-    t_H_procFrame.start()
-    # S Thread
-    t_S_procFrame = Thread( target=procFrame, args=( S, Q_S_procFrame ) )
-    t_S_procFrame.start()
-    # V Thread
-    t_V_procFrame = Thread( target=procFrame, args=( V, Q_V_procFrame ) )
-    t_V_procFrame.start()
-
     # Check if queue has something available for retrieval
-    if Q_H_procFrame.qsize() > 0:
-        H = Q_H_procFrame.get()
-
-    if Q_S_procFrame.qsize() > 0:
-        S = Q_S_procFrame.get()
-
-    if Q_V_procFrame.qsize() > 0:
-        V = Q_V_procFrame.get()
-
-    
-    # Combine images using bitwise AND to avoid over saturation
-    H = cv2.bitwise_and( H, H)
-    S = cv2.bitwise_and( S, S)
-    V = cv2.bitwise_and( V, V)
-    frame = cv2.merge( [H, S, V] )
-    
-    # Convert into grayscale because HoughCircle only accepts grayscale images
-    bgr2gray = cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY )
-
-
-    # Get trackbar position and reflect it in HoughCircles parameters input
-    dp = cv2.getTrackbarPos( "dp", ver )
-    minDist = cv2.getTrackbarPos( "minDist", ver )
-    param1 = cv2.getTrackbarPos( "param1", ver )
-    param2 = cv2.getTrackbarPos( "param2", ver )
-    minRadius = cv2.getTrackbarPos( "minRadius", ver )
-    maxRadius = cv2.getTrackbarPos( "maxRadius", ver )
-
-    # Start thread to scan for circles
-    t_scan4circles = Thread( target=scan4circles, args=( bgr2gray, overlay, overlayImg, output, Q_scan4circles ) )
-    t_scan4circles.start()
-
-    # Check if queue has something available for retrieval
-    if Q_scan4circles.qsize() > 0:
-        output = Q_scan4circles.get()
-
-    # If debug flag is invoked
-    if args["debug"]:
-       fps.update()
-
+    out = scan4circles( mask, overlay, overlayImg, frame )
+    if( out is not None ):
+        image = out
+    else:
+        pass
+        
     # Live feed display toggle
     if normalDisplay:
-        cv2.imshow(ver, output)
-        cv2.imshow( "AI_View", bgr2gray )
+        cv2.imshow( ver, image)
+        cv2.imshow( "AI_View", mask )
         key = cv2.waitKey(1) & 0xFF
     elif not(normalDisplay):
-##        cv2.imshow("H", H)
-##        cv2.imshow("S", S)
-##        cv2.imshow("V", V)
-        cv2.imshow(ver, frame)
-        cv2.imshow( "AI_View", bgr2gray )
+        cv2.imshow(ver, closing)
+        cv2.imshow( "AI_View", mask )
         key = cv2.waitKey(1) & 0xFF
-
-# ************************************************************************
-# =============================> DEPRECATED <=============================
-# ************************************************************************
-
-'''
-bgr2gray = cv2.erode(cv2.dilate(thresholded, kernel, iterations=1), kernel, iterations=1)
-
-# Convert into HSV and threshold black
-lower = numpy.array([0,0,0])
-upper = numpy.array([0,0,25])
-hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-mask = cv2.inRange(hsv, lower, upper)
-
-# Get trackbar position and reflect it in HoughCircles parameters input
-
------------------------------------------------------------------------
-maxRadius = cv2.getTrackbarPos("maxRadius", ver)
-
-# Reduce Noise
-blur = cv2.medianBlur(bgr2gray,5)
-gaussBlur = cv2.GaussianBlur(blur,(5,5),0)
-
-# Adaptive threshold allows us to detect sharp edges in images
-threshold = cv2.adaptiveThreshold(blur,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                  cv2.THRESH_BINARY,11,3.5)
-
-# Scan for circles
-
-------------------------------------------------------------------------
-
-# ****************************************************
-# Define function to calibrate camera by extracting
-# dimensions from a known image with known dimensions
-# ****************************************************
-def find_marker( image ):
-    # Convert into grayscale because HoughCircle only accepts grayscale images
-    bgr2gray = cv2.cvtColor( image, cv2.COLOR_BGR2GRAY )
-    bgr2gray = cv2.bilateralFilter( bgr2gray,11,17,17 )
-
-    # Threshold any color that is not black to white
-    retval, thresholded = cv2.threshold(bgr2gray, 180, 255, cv2.THRESH_BINARY )
-
-    kernel = cv2.getStructuringElement( cv2.MORPH_RECT, ( 10, 10 ) )
-    bgr2gray = cv2.erode( cv2.dilate( thresholded, kernel, iterations=1 ), kernel, iterations=1 )
-
-    cv2.imshow( "calibrationTool", bgr2gray )
-    
-    # Find (in future update, the largest) circle outline
-    circles = cv2.HoughCircles( bgr2gray, cv2.HOUGH_GRADIENT, 14, 396,
-                                191, 43, 50, 85 )
-
-    if circles is not None:
-        circles = numpy.round( circles[0,:] ).astype( "int" )
-        if args["debug"] is True:
-            print( "Shape: " + str( circles.shape ) )
-            print( "Array content: " + str( circles ) )
-        for ( x, y, r ) in circles:
-            circle = ( x, y, r )
-            return( x, y, r )
-
-    else:
-        return(0)
         
-
-# ************************************************************************
-# Define function that returns distance from object to camera
-# ************************************************************************
-def distance_to_camera( knownWidth, focalLength, perWidth ):
-    # Compute and return the distance from the object to the camera
-    return ( knownWidth * focalLength ) / perWidth
-
---------------------------------------------------------------------------
-
-cv2.createTrackbar( "maxRadius", ver, 30, 250, placeholder )
-
-# ************************************************************************
-# TEMPORARELY DEPRECATED
-# ************************************************************************
-### Calibrate camera using a predefined scale for distance detection
-##KNOWN_DISTANCE = 3.5
-##KNOWN_WIDTH = 2
-##image = cv2.imread( "images/3.5inch.png" )
-##image = cv2.resize( image, ( 360, 276 ) )
-##marker = find_marker( image )
-##focalLength = ( marker[2] * KNOWN_DISTANCE ) / KNOWN_WIDTH
-
-#KNOWN_WIDTH = 0.4645669 #Average iris diameter
-
-# ************************************************************************
-# MAKE IT ALL HAPPEN
-# ************************************************************************
-
---------------------------------------------------------------------------
-
-for ( x, y, r ) in circles:
-
-            # ************************************************************************
-            # TEMPORARELY DEPRECATED
-            # ************************************************************************
-            
-##            # Get distance away from camera
-##            marker = find_marker( output.copy() )
-##            
-##            if marker is not 0:
-##                KNOWN_WIDTH = (2*r)/96.0
-##                if args["debug"] is True:
-##                    print( "Detected Width: %.2f" %KNOWN_WIDTH )
-##                inches = distance_to_camera( KNOWN_WIDTH, focalLength, marker[2] )
-##                mm = inches*25.4 #Get distance in millimeters
-
-            # Resize watermark image
-            resized = cv2.resize( overlayImg, ( 2*r, 2*r ),
-                                  interpolation = cv2.INTER_AREA )
-
-------------------------------------------------------------------------------------------------
-
-    # Check if queue has something available for retrieval
-    if Q_procFrame.qsize() > 0:
-        bgr2gray = Q_procFrame.get()
-##        bgr2grayBAK = bgr2gray
-##        if initRun==False:
-##            if abs(oldx - x_ROI) > 10 or abs(oldy - y_ROI) > 10:
-##                # Calculate Region of interest constraints
-##                x1_ROI = x_ROI-r_ROI-10
-##                x2_ROI = x_ROI+r_ROI+10
-##                y1_ROI = y_ROI-r_ROI-10
-##                y2_ROI = y_ROI+r_ROI+10
-##
-##                oldx = x_ROI
-##                oldy = y_ROI
-##                print"updated xyROI"
-##
-##            if x1_ROI>0 and x1_ROI<w and x2_ROI>0 and x2_ROI<w and y1_ROI>0 and y1_ROI<h and y2_ROI>0 and y2_ROI<h:
-##                print("xyr_ROI: " , (x_ROI, y_ROI, r_ROI))
-##                print("ROI Location: ", (y_ROI-r_ROI), (y_ROI+r_ROI), (x_ROI-r_ROI), (x_ROI+r_ROI))
-##                print("BGR shape: ", bgr2gray.shape)
-##                bgr2gray = bgr2gray[ y1_ROI:y2_ROI, x1_ROI:x2_ROI]
-##            else:
-##                bgr2gray = bgr2grayBAK
-
-    # Get trackbar position and reflect it in HoughCircles parameters input
-    dp = cv2.getTrackbarPos( "dp", ver )
-    minDist = cv2.getTrackbarPos( "minDist", ver )
-    param1 = cv2.getTrackbarPos( "param1", ver )
-    param2 = cv2.getTrackbarPos( "param2", ver )
-    minRadius = cv2.getTrackbarPos( "minRadius", ver )
-    maxRadius = cv2.getTrackbarPos( "maxRadius", ver )
-
------------------------------------------------------------------------------------------------------
-
-    # Check if queue has something available for retrieval
-    if Q_scan4circles.qsize() > 0:
-        output, (x_ROI, y_ROI, r_ROI) = Q_scan4circles.get()
-##        if initRun==True:
-##            initRun=False
-##
-##            x1_ROI = x_ROI-r_ROI-10
-##            x2_ROI = x_ROI+r_ROI+10
-##            y1_ROI = y_ROI-r_ROI-10
-##            y2_ROI = y_ROI+r_ROI+10
-##
-##            oldx = x_ROI
-##            oldy = y_ROI
-
-    # If debug flag is invoked
-    if args["debug"]:
-       fps.update()
-
-'''
