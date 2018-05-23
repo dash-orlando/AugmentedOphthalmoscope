@@ -11,11 +11,12 @@
 *   -a/--alpha  : Specify transperancy level (0.0 - 1.0)
 *   -d/--debug  : Enable debugging
 *
-* VERSION: 1.0.1a
+* VERSION: 1.0.2a
 *   - ADDED   : Overlay an image/pathology
 *   - MODIFIED: Significantly reduced false-positives
 *   - ADDED   : Define a ROI. If blobs are detected outside
 *               ROI,ignore them
+*   - ADDED   : Store detected pupil color in BGR color space
 *
 * KNOWN ISSUES:
 *   - Code is VERY buggy and lacks many of the previous
@@ -33,7 +34,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver1.0.1a"
+ver = "Live Feed Ver1.0.2a"
 print __doc__
 
 import  cv2, argparse                                                       # Various Stuff
@@ -291,11 +292,13 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):
 
     if( x_min > 0 and y_min > 0 ):
         if( x_max < w and y_max < h ):
+            print( get_avg_color( frame, pos ) )                            # Get the average color of that region
+            
             overlay_img = cv2.resize( overlay_img, ( 2*r, 2*r ),            # Resize overlay image to fit
                                       interpolation = cv2.INTER_AREA )      # ...
             
             overlay_frame[ y_min:y_max, x_min:x_max] = overlay_img          # Place overlay image into overlay frame
-
+            
             frame = cv2.addWeighted( overlay_frame,                         # Join overlay frame (alpha)
                                      args["alpha"],                         # with actual frame (RGB)
                                      frame, 1.0, 0 )                        # ...
@@ -308,17 +311,25 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):
         
 # ------------------------------------------------------------------------
 
-def reset_ROI():
+def get_avg_color( img, pos ):
     '''
-    Dynamically tracka/update ROI where pupil is located
+    Get the average color of the ROI
 
     INPUTS:
-        - blah1 : ..
+        - img : image which we want the average color of
 
     OUTPUT:
-        - blah2 : ...
+        - NONE
     '''
+    
+    x, y, r = pos                                                           # Unpack co-ordinates
 
+    img = img[ y-5:y+5, x-5:x+5 ]                                           # Crop image to the size of the pupil
+    avg_color_per_row = np.average( img, axis=0 )                           # Get the average color
+    avg_color = np.average( avg_color_per_row, axis=0 )                     # ...
+
+    return( avg_color )                                                     # Return
+    
 # ************************************************************************
 # ===========================> SETUP PROGRAM <===========================
 # ************************************************************************
