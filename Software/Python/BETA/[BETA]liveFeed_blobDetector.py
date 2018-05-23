@@ -11,13 +11,16 @@
 *   -a/--alpha  : Specify transperancy level (0.0 - 1.0)
 *   -d/--debug  : Enable debugging
 *
-* VERSION: 1.0a
+* VERSION: 1.0.1a
 *   - ADDED   : Overlay an image/pathology
 *   - MODIFIED: Significantly reduced false-positives
+*   - ADDED   : Define a ROI. If blobs are detected outside
+*               ROI,ignore them
 *
 * KNOWN ISSUES:
 *   - Code is VERY buggy and lacks many of the previous
 *     functionalities (i.e threading, etc...)
+*   - Unable to capture pupil when looking from the side
 *
 * AUTHOR                    :   Mohammad Odeh
 * WRITTEN                   :   Aug   1st, 2016 Year of Our Lord
@@ -30,7 +33,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver1.0b"
+ver = "Live Feed Ver1.0.1a"
 print __doc__
 
 import  cv2, argparse                                                       # Various Stuff
@@ -38,23 +41,22 @@ import  numpy                                               as  np          # Im
 from    timeStamp                   import  fullStamp       as  FS          # Show date/time on console output
 from    imutils.video.pivideostream import  PiVideoStream                   # Import threaded PiCam module
 from    imutils.video               import  FPS                             # Benchmark FPS
-from    time                        import  sleep                           # Sleep for stability
-from    threading                   import  Thread                          # Used to thread processes
-from    Queue                       import  Queue                           # Used to queue input/output
-from    usbProtocol                 import  createUSBPort                   # Create USB Port
 from    LEDRing                     import  *                               # Let there be light
+from    time                        import  sleep, time                     # Time is essential to life
 
 # ************************************************************************
 # =====================> CONSTRUCT ARGUMENT PARSER <=====================*
 # ************************************************************************
 ap = argparse.ArgumentParser()
 
-ap.add_argument("-o", "--overlay", required=False,
-                help="path to overlay image")
-ap.add_argument("-a", "--alpha", type=float, default=0.85,
-                help="set alpha level (smaller = more transparent).\ndefault=0.85")
-ap.add_argument("-d", "--debug", action='store_true',
-                help="invoke flag to enable debugging")
+ap.add_argument( "-o", "--overlay", required=False,
+                 help="Path to overlay image" )
+
+ap.add_argument( "-a", "--alpha", type=float, default=0.85,
+                 help="Set alpha level.\nDefault=0.85" )
+
+ap.add_argument( "-d", "--debug", action='store_true',
+                 help="Enable debugging" )
 
 args = vars( ap.parse_args() )
 
@@ -99,6 +101,36 @@ def placeholder( x ):
 
 # ------------------------------------------------------------------------
 
+def update_blobDetector( x ):
+    '''
+    Update blob detector parameters. Gets called whenever
+    trackbars are updated
+
+    INPUTS:-
+        - x: nothing
+
+    OUTPUT:-
+        - Non
+    '''
+    
+    global detector, params
+
+    r_min       = cv2.getTrackbarPos( "minRadius"    , ver )                # Get updated blob detector
+    r_max       = cv2.getTrackbarPos( "maxRadius"    , ver )                # parameters
+    circle_min  = cv2.getTrackbarPos( "Circularity"  , ver )                # ...
+    convex_min  = cv2.getTrackbarPos( "Convexity"    , ver )                # ...
+    inertia_min = cv2.getTrackbarPos( "InertiaRatio" , ver )                # ...
+
+    params.minArea = np.pi * r_min**2                                       # Update parameters
+    params.maxArea = np.pi * r_max**2                                       # ...
+    params.minCircularity   = circle_min/100.                               # ...
+    params.minConvexity     = convex_min/100.                               # ...
+    params.minInertiaRatio  = inertia_min/100.                              # ...
+    
+    detector = cv2.SimpleBlobDetector_create( params )                      # Reflect on detector
+    
+# ------------------------------------------------------------------------
+
 def procFrame( image ):
     '''
     Process frame by applying a bilateral filter, a Gaussian blur,
@@ -113,7 +145,7 @@ def procFrame( image ):
 
     try:
         # Get trackbar position and reflect its threshold type and values
-        threshType = cv2.getTrackbarPos( "Type:\n0.MEAN_Binary\n1.GAUSSIAN_Binary\n2.MEAN_BinaryInv\n3.GAUSSIAN_BinaryInv\n4.OTSU",
+        threshType = cv2.getTrackbarPos( "Type:\n0.MEAN_Binary\n1.GAUSSIAN_Binary\n2.MEAN_BinaryInv\n3.GAUSSIAN_BinaryInv",
                                          "CV")                              # ...
         maxValue        = cv2.getTrackbarPos( "maxValue"    , "CV")         # Update parameters
         blockSize       = cv2.getTrackbarPos( "blockSize"   , "CV")         # ...
@@ -123,7 +155,7 @@ def procFrame( image ):
         # blockSize must be an odd number
         if( blockSize%2 == 0 ):                                             # Ensure that blockSize
             blockSize += 1                                                  # is an odd number
-
+        
         # Dissolve noise while maintaining edge sharpness
         processed = cv2.inRange( image, lower_bound, upper_bound )
         processed = cv2.bilateralFilter( processed, 5, 17, 17 ) #( processed, 11, 17, 17 )
@@ -159,9 +191,9 @@ def procFrame( image ):
     
     except:
         cv2.createTrackbar( "maxValue"      , "CV", 245, 255, placeholder ) # Reset trackbars
-        cv2.createTrackbar( "blockSize"     , "CV", 254, 254, placeholder ) # ...
-        cv2.createTrackbar( "cte"           , "CV", 65 , 100, placeholder ) # ...
-        cv2.createTrackbar( "GaussianBlur"  , "CV", 12 , 50 , placeholder ) # ...
+        cv2.createTrackbar( "blockSize"     , "CV", 58, 254, placeholder ) # ...
+        cv2.createTrackbar( "cte"           , "CV", 0 , 100, placeholder ) # ...
+        cv2.createTrackbar( "GaussianBlur"  , "CV", 40 , 50 , placeholder ) # ...
         
 # ------------------------------------------------------------------------
 
@@ -179,7 +211,10 @@ def scan4circles( processed, overlay_frame, overlay_img, frame ):
         - frame         : Image with/without overlay
                 (depends whether circles were found or not)
     '''
+    global ROI, startTime
     
+    ROI_x_min, ROI_y_min = ROI[0]
+    ROI_x_max, ROI_y_max = ROI[1]
     # Error handling in case a non-allowable integer is chosen (1)
     try:
 
@@ -190,12 +225,32 @@ def scan4circles( processed, overlay_frame, overlay_img, frame ):
             for k in keypoints:                                             # Iterate over found blobs
                 x, y, r = int(k.pt[0]), int(k.pt[1]), int(k.size/2)         # Get co-ordinates
                 pos = ( x, y, r )                                           # Pack co-ordinates
-                
-                frame = add_overlay( overlay_frame,                         # Add overlay
-                                     overlay_img,                           # ...
-                                     frame, pos )                           # ...
 
-        else: pass                                                          # Else do nothing
+                if( ROI_x_min < (x-r) and (x+r) < ROI_x_max ):              # Check if we are within ROI
+                    if( ROI_y_min < (y-r) and (y+r) < ROI_y_max ):          # ...
+                    
+                        ROI[0] = ( (x-r-dx), (y-r-dy) )
+                        ROI[1] = ( (x+r+dx), (y+r+dy) )
+                        startTime = time()
+                        frame = add_overlay( overlay_frame,                 # Add overlay
+                                             overlay_img,                   # ...
+                                             frame, pos )                   # ...
+                        
+                    else:
+                        if( time() - startTime >= timeout ):
+                            print( "ROI Reset" )
+                            startTime = time()
+                            ROI = ROI_0[:]                                  # Reset ROI if needed be
+                else:
+                    if( time() - startTime >= timeout ):
+                        print( "ROI Reset" )
+                        startTime = time()
+                        ROI = ROI_0[:]                                      # Reset ROI if needed be
+        else:
+            if( time() - startTime >= timeout ):
+                print( "ROI Reset" )
+                startTime = time()
+                ROI = ROI_0[:]                                              # Reset ROI if needed be
 
         return( frame )
 
@@ -205,10 +260,11 @@ def scan4circles( processed, overlay_frame, overlay_img, frame ):
             print( "{} Error caught in scan4circles()".format(FS()) )       # Specify error type
             print( "{0} {1}".format(FS(), error) )                          # ...
 
-        cv2.createTrackbar( "minRadius"    , ver, 10 , 150, placeholder )   # Reset trackbars
-        cv2.createTrackbar( "maxRadius"    , ver, 40 , 150, placeholder )   # ...
-        cv2.createTrackbar( "Circularity"  , ver, 50 , 100, placeholder )   # ...
-        cv2.createTrackbar( "InertiaRatio" , ver, 50 , 100, placeholder )   # ...
+        cv2.createTrackbar( "minRadius"    , ver, 10 , 150, update_blobDetector )   # Reset trackbars
+        cv2.createTrackbar( "maxRadius"    , ver, 40 , 150, update_blobDetector )   # ...
+        cv2.createTrackbar( "Circularity"  , ver, 25 , 100, update_blobDetector )   # ...
+        cv2.createTrackbar( "Convexity"    , ver, 15 , 100, update_blobDetector )   # ...
+        cv2.createTrackbar( "InertiaRatio" , ver, 70 , 100, update_blobDetector )   # ...
 
         return( None )                                                      # Return NONE
     
@@ -246,41 +302,30 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):
 
             if( ["debug"] ):
                 cv2.circle( frame, (x, y), r, (0, 255, 0), 2 )              # Draw a circle
+                cv2.rectangle( frame, ROI[0], ROI[1], (255, 0, 0), 2 )
             
     return( frame )
-
+        
 # ------------------------------------------------------------------------
 
-def update_blobDetector( x ):
+def reset_ROI():
     '''
-    Update blob detector parameters 
+    Dynamically tracka/update ROI where pupil is located
 
     INPUTS:
-        - x: nothing
+        - blah1 : ..
 
     OUTPUT:
-        - Non
+        - blah2 : ...
     '''
-    
-    global detector, params
 
-    r_min       = cv2.getTrackbarPos( "minRadius", ver )                    # Get updated blob detector
-    r_max       = cv2.getTrackbarPos( "maxRadius", ver )                    # parameters
-    circle_min  = cv2.getTrackbarPos( "Circularity"  , ver )                # ...
-    inertia_min = cv2.getTrackbarPos( "InertiaRatio" , ver )                # ...
-
-    params.minArea = np.pi * r_min**2                                       # Update parameters
-    params.maxArea = np.pi * r_max**2                                       # ...
-    params.minCircularity = circle_min/100.                                 # ...
-    params.minInertiaRatio = inertia_min/100.                               # ...
-    
-    detector = cv2.SimpleBlobDetector_create( params )                      # Reflect on detector
-        
-    
 # ************************************************************************
 # ===========================> SETUP PROGRAM <===========================
 # ************************************************************************
 
+######
+### General Setup
+######
 # Check whether an overlay is specified
 if( args["overlay"] != None ):
     overlayImg = cv2.imread( args["overlay"], cv2.IMREAD_UNCHANGED )        # Load specific overlay
@@ -307,20 +352,23 @@ cv2.namedWindow( ver )                                                      # St
 cv2.setMouseCallback( ver, control )                                        # Connect mouse events to actions
 cv2.createTrackbar( "minRadius"     , ver, 10 , 100, update_blobDetector )  # Trackbars for blob detector
 cv2.createTrackbar( "maxRadius"     , ver, 40 , 100, update_blobDetector )  # parameters.
-cv2.createTrackbar( "Circularity"   , ver, 50 , 100, update_blobDetector )  #     (used in scan4circles)
-cv2.createTrackbar( "InertiaRatio"  , ver, 50 , 100, update_blobDetector )  # ...
+cv2.createTrackbar( "Circularity"   , ver, 25 , 100, update_blobDetector )#50  #     (used in scan4circles)
+cv2.createTrackbar( "Convexity"     , ver, 15 , 100, update_blobDetector )#25  # ...
+cv2.createTrackbar( "InertiaRatio"  , ver, 70 , 100, update_blobDetector )#50  # ...
 
 # Setup window and trackbars for CV window
 cv2.namedWindow( "CV" )                                                     # Start a named window for CV
 
-cv2.createTrackbar( "Type:\n0.MEAN_Binary\n1.GAUSSIAN_Binary\n2.MEAN_BinaryInv\n3.GAUSSIAN_BinaryInv\n4.OTSU",
-                    "CV", 3, 3, placeholder )                               # ...
+cv2.createTrackbar( "Type:\n0.MEAN_Binary\n1.GAUSSIAN_Binary\n2.MEAN_BinaryInv\n3.GAUSSIAN_BinaryInv",
+                    "CV", 1, 3, placeholder )#3                               # ...
 cv2.createTrackbar( "maxValue"      , "CV", 255, 255, placeholder )         # Trackbars to modify adaptive
-cv2.createTrackbar( "blockSize"     , "CV", 130, 254, placeholder )         # thresholding parameters
-cv2.createTrackbar( "cte"           , "CV", 11 , 100, placeholder )         #   (used in procFrame)
-cv2.createTrackbar( "GaussianBlur"  , "CV", 16 , 50 , placeholder )         # ...
+cv2.createTrackbar( "blockSize"     , "CV", 58 , 254, placeholder )#130         # thresholding parameters
+cv2.createTrackbar( "cte"           , "CV",  0 , 100, placeholder )#11         #   (used in procFrame)
+cv2.createTrackbar( "GaussianBlur"  , "CV", 40 , 50 , placeholder )#16         # ...
 
-# Setup BlobDetector
+######
+### Setup BlobDetector
+######
 global detector, params
 
 params = cv2.SimpleBlobDetector_Params()
@@ -329,13 +377,17 @@ params = cv2.SimpleBlobDetector_Params()
 params.filterByArea = True
 params.minArea = 3.141 * 15**2
 params.maxArea = 3.141 * 50**2
-	 
+
+# Filter by color
+params.filterByColor = True
+params.blobColor = 0
+
 # Filter by Circularity
 params.filterByCircularity = True
 params.minCircularity = 0.1
  
 # Filter by Convexity
-params.filterByConvexity = False
+params.filterByConvexity = True
 params.minConvexity = 0.25
 	 
 # Filter by Inertia
@@ -348,20 +400,32 @@ params.minDistBetweenBlobs = 1000
 # Create a detector with the parameters
 detector = cv2.SimpleBlobDetector_create(params)
 
-    
+######
+### Setup ROI
+######
+global startTime, ROI, dx, dy
+startTime = time()
+timeout = 2.5
+dx, dy = 15, 15
+ROI_0 = [ (144-50, 108-50), (144+50, 108+50) ]
+ROI   = [ (144-50, 108-50), (144+50, 108+50) ]
+
 # ************************************************************************
 # =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
 global lower_bound, upper_bound
 
-lower_bound = np.array( [0,0,0] )
-upper_bound = np.array( [10,10,10] )
+##lower_bound = np.array( [0,0,10] )
+##upper_bound = np.array( [255,255,195] )
+
+lower_bound = np.array( [ 0, 0, 0] )
+upper_bound = np.array( [75,75,75] )
 
 while( True ):
     # Capture frame
     frame = stream.read()[36:252, 48:336]                                   # Capture frame and crop it
     image = frame                                                           # Save a copy of captured frame
-    
+
     # Add a 4th dimension (Alpha) to the captured frame
     (h, w) = frame.shape[:2]                                                # Determine width and height
     frame = np.dstack([ frame, np.ones((h, w),                              # Stack the arrays in sequence, 
@@ -378,6 +442,9 @@ while( True ):
         image = out                                                         # ...
     else:                                                                   # Else, don't
         pass                                                                # ...
+
+    if( ["debug"] ):
+        cv2.rectangle( image, ROI_0[0], ROI_0[1], (0,0,255) ,2 )
         
     # Display feed
     if( realDisplay ):                                                      # Show real output
