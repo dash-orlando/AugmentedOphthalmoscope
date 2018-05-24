@@ -11,18 +11,20 @@
 *   -a/--alpha  : Specify transperancy level (0.0 - 1.0)
 *   -d/--debug  : Enable debugging
 *
-* VERSION: 1.0.5a
+* VERSION: 1.1a
 *   - ADDED   : Overlay an image/pathology
 *   - MODIFIED: Significantly reduced false-positives
 *   - ADDED   : Define a ROI. If blobs are detected outside
 *               ROI, ignore them
 *   - ADDED   : Store detected pupil color in BGR color space
 *   - MODIFIED: PUT THINGS IN FUNCTIONS FOR GOD'S SAKE!
+*   - ADDED   : Fallback to contour detection if BLOB fails
 *
 * KNOWN ISSUES:
 *   - Code is VERY buggy and lacks many of the previous
 *     functionalities (i.e threading, etc...)
-*   - Unable to capture pupil when looking from the side
+*   - Code logic is somewhat iffy and can be optimized
+*   - Unable to capture pupil when looking from the side (Solution IP)
 *
 * AUTHOR                    :   Mohammad Odeh
 * WRITTEN                   :   Aug   1st, 2016 Year of Our Lord
@@ -35,7 +37,7 @@
 * LEFT CLICK: Toggle view.
 '''
 
-ver = "Live Feed Ver1.0.5a"
+ver = "Live Feed Ver1.1a"
 print __doc__
 
 import  cv2                                                                     # OpenCV, the meat & potatoes
@@ -64,6 +66,7 @@ ap.add_argument( "-d", "--debug", action='store_true',
 args = vars( ap.parse_args() )
 
 args["debug"] = True
+args["overlay"] = "/home/pi/Desktop/BETA/Alpha/Retinol Artery Occlusion.png"
 
 # ************************************************************************
 # =====================> DEFINE NECESSARY FUNCTIONS <=====================
@@ -118,19 +121,19 @@ def setup_windows():
     cv2.setMouseCallback( ver, control )                                        # Connect mouse events to actions
     cv2.createTrackbar( "minRadius"     , ver, 10 , 100, update_detector )      # Trackbars for blob detector
     cv2.createTrackbar( "maxRadius"     , ver, 40 , 100, update_detector )      # parameters.
-    cv2.createTrackbar( "Circularity"   , ver, 25 , 100, update_detector )      #     (used in find_pupil)
-    cv2.createTrackbar( "Convexity"     , ver, 15 , 100, update_detector )      # ...
+    cv2.createTrackbar( "Circularity"   , ver, 70 , 100, update_detector )#40      #     (used in find_pupil)
+    cv2.createTrackbar( "Convexity"     , ver, 40 , 100, update_detector )#15      # ...
     cv2.createTrackbar( "InertiaRatio"  , ver, 70 , 100, update_detector )      # ...
 
     # Setup window and trackbars for CV window
     CV_win = "CV Window"                                                        # Window's name
     cv2.namedWindow( CV_win )                                                   # Start a named window for CV
     cv2.createTrackbar( "0.BiMean\n1.BiGaussian\n2.BiMean-Inv\n3.BiGaussian-Inv",
-                        CV_win, 1, 3, placeholder )                             # ...
+                        CV_win, 0, 3, placeholder )                             # ...
     cv2.createTrackbar( "maxValue"      , CV_win, 255, 255, placeholder )       # Trackbars to modify adaptive
-    cv2.createTrackbar( "blockSize"     , CV_win, 58 , 254, placeholder )       # thresholding parameters
-    cv2.createTrackbar( "cte"           , CV_win,  0 , 100, placeholder )       #   (used in procFrame)
-    cv2.createTrackbar( "GaussianBlur"  , CV_win, 40 , 50 , placeholder )       # ...
+    cv2.createTrackbar( "blockSize"     , CV_win, 175, 254, placeholder )#58       # thresholding parameters
+    cv2.createTrackbar( "cte"           , CV_win,  50, 100, placeholder )       #   (used in procFrame)
+    cv2.createTrackbar( "GaussianBlur"  , CV_win,  40, 50 , placeholder )       # ...
 
     return()
 
@@ -161,21 +164,21 @@ def setup_detector():
 
     # Filter by Circularity
     parameters.filterByCircularity = True                                       # ...
-    parameters.minCircularity = 0.25                                            # ...
+    parameters.minCircularity = 0.70                                            # ...
      
     # Filter by Convexity
     parameters.filterByConvexity = True                                         # ...
-    parameters.minConvexity = 0.15                                              # ...
+    parameters.minConvexity = 0.40                                              # ...
              
     # Filter by Inertia
     parameters.filterByInertia = True                                           # ...
-    parameters.minInertiaRatio = 0.7                                            # ...
+    parameters.minInertiaRatio = 0.70                                           # ...
 
     # Distance Between Blobs
     parameters.minDistBetweenBlobs = 1000                                       # ...
              
     # Create a detector with the parameters
-    detector = cv2.SimpleBlobDetector_create(parameters)                        # Create detector
+    detector = cv2.SimpleBlobDetector_create( parameters )                      # Create detector
 
     return( parameters, detector )
     
@@ -201,8 +204,8 @@ def update_detector( x ):
     convex_min  = cv2.getTrackbarPos( "Convexity"    , ver )                    # ...
     inertia_min = cv2.getTrackbarPos( "InertiaRatio" , ver )                    # ...
 
-    params.minArea = np.pi * r_min**2                                           # Update parameters
-    params.maxArea = np.pi * r_max**2                                           # ...
+    params.minArea          = np.pi * r_min**2                                  # Update parameters
+    params.maxArea          = np.pi * r_max**2                                  # ...
     params.minCircularity   = circle_min/100.                                   # ...
     params.minConvexity     = convex_min/100.                                   # ...
     params.minInertiaRatio  = inertia_min/100.                                  # ...
@@ -227,11 +230,11 @@ def procFrame( image ):
     try:
         # Get trackbar position and reflect its threshold type and values
         threshType      = cv2.getTrackbarPos( "0.BiMean\n1.BiGaussian\n2.BiMean-Inv\n3.BiGaussian-Inv",
-                                              CV_win)                           # ...
-        maxValue        = cv2.getTrackbarPos( "maxValue"    , CV_win)           # Update parameters
-        blockSize       = cv2.getTrackbarPos( "blockSize"   , CV_win)           # ...
-        cte             = cv2.getTrackbarPos( "cte"         , CV_win)           # from trackbars
-        GaussianBlur    = cv2.getTrackbarPos( "GaussianBlur", CV_win)           # ...
+                                              CV_win )                          # ...
+        maxValue        = cv2.getTrackbarPos( "maxValue"    , CV_win )          # Update parameters
+        blockSize       = cv2.getTrackbarPos( "blockSize"   , CV_win )          # ...
+        cte             = cv2.getTrackbarPos( "cte"         , CV_win )          # from trackbars
+        GaussianBlur    = cv2.getTrackbarPos( "GaussianBlur", CV_win )          # ...
 
         # blockSize must be an odd number
         if( blockSize%2 == 0 ):                                                 # Ensure that blockSize
@@ -265,11 +268,11 @@ def procFrame( image ):
                                                cte )                            # ...
 
         # Use erosion and dilation combination to eliminate false positives.
-        kernel      = np.ones( (3, 3), np.uint8 )                               # Define kernel for filters
+        kernel = cv2.getStructuringElement( cv2.MORPH_ELLIPSE, ( 3, 3 ) )       # Define kernel for filters                         
         processed   = cv2.erode ( processed, kernel, iterations=6 )             # Erode over 6 passes
         processed   = cv2.dilate( processed, kernel, iterations=3 )             # Dilate over 3 passes
 
-        morphed     = cv2.morphologyEx( image, cv2.MORPH_GRADIENT, kernel )     # Morph image for shits and gigs
+        morphed     = cv2.morphologyEx( processed, cv2.MORPH_GRADIENT, kernel ) # Morph image for shits and gigs
 
     # Error handling (2/3) 
     except:
@@ -277,16 +280,17 @@ def procFrame( image ):
         morphed     = cv2.morphologyEx( image, cv2.MORPH_GRADIENT, kernel )     # function done fucked up!
         
         cv2.createTrackbar( "maxValue"      , CV_win, 245, 255, placeholder )   # Reset trackbars
-        cv2.createTrackbar( "blockSize"     , CV_win, 58 , 254, placeholder )   # ...
-        cv2.createTrackbar( "cte"           , CV_win, 0  , 100, placeholder )   # ...
-        cv2.createTrackbar( "GaussianBlur"  , CV_win, 40 ,  50, placeholder )   # ...
+        cv2.createTrackbar( "blockSize"     , CV_win, 175, 254, placeholder )#107   # ...
+        cv2.createTrackbar( "cte"           , CV_win,  50, 100, placeholder )   # ...
+        cv2.createTrackbar( "GaussianBlur"  , CV_win,  40,  50, placeholder )   # ...
 
     # Error handling (3/3)
     finally:
         return( processed, morphed )                                            # Return
     
 # ------------------------------------------------------------------------
-
+initC = True
+initK = True
 def find_pupil( processed, overlay_frame, overlay_img, frame ):
     '''
     Find pupil by scanning for circles within an image
@@ -301,39 +305,72 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
         - frame         : Image with/without overlay
                 (depends whether circles were found or not)
     '''
-    global ROI, startTime
+    global ROI
+    global initC, initK
     
     ROI_x_min, ROI_y_min = ROI[0]
     ROI_x_max, ROI_y_max = ROI[1]
     
-    frame_failed = bool( True )                                                 # Boolean flag
-    within_ROI   = bool( False )
+    frame_failed = bool( True )                                                 # Boolean flag 1
+    within_ROI   = bool( False )                                                # Boolean flag 2
+
     # Error handling (1/3)
     try:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)                          # Convert to grayscale
-        keypoints = detector.detect(gray)                                       # Launch blob detector
+        # BLOB Detector
+        gray = cv2.cvtColor( frame, cv2.COLOR_BGR2GRAY )                        # Convert to grayscale
+        keypoints = detector.detect( gray )                                     # Launch blob detector
 
         if( len(keypoints) > 0 ):                                               # If blobs are found
+            if( initK ):
+                print( "[INFO] cv2.SimpleBlobDetector()" )
+                initC = True
+                initK = False
             for k in keypoints:                                                 # Iterate over found blobs
                 x, y, r = int(k.pt[0]), int(k.pt[1]), int(k.size/2)             # Get co-ordinates
                 pos = ( x, y, r )                                               # Pack co-ordinates
-
+                
                 if( is_inROI( pos ) ):                                          # Check if we are within ROI
                     frame = add_overlay( overlay_frame,                         # Add overlay
                                          overlay_img,                           # ...
                                          frame, pos )                           # ...
-
+                    print( "(x, y, r) = ({}, {}, {})".format(pos[0], pos[1], pos[2]) )
                     frame_failed = bool( False )                                # Set flag to false
                     within_ROI   = bool( True  )                                # Set flag to true
                     
         else:
-            pass
+            # Contour Detector
+            r_min   = cv2.getTrackbarPos( "minRadius", ver )                    # Get current r_min ...
+            r_max   = cv2.getTrackbarPos( "maxRadius", ver )                    # and r_max values
+             
+            _, contours, _ = cv2.findContours( processed,                       # Find contours based on their...
+                                               cv2.RETR_EXTERNAL,               # external edges and keep only...
+                                               cv2.CHAIN_APPROX_SIMPLE )        # intermediate points (SIMPLE)
             
+            # If circles are found draw them
+            if( len(contours) > 0 ):                                            # Check if we detected anything
+                if( initC ):
+                    print( "[INFO] cv2.findContours()" )
+                    initC = False
+                    initK = True
+                for c in contours:                                              # Iterate over all contours
+                    (x, y) ,r = cv2.minEnclosingCircle(c)                       # Min enclosing circle inscribing contour
+                    xy = (int(x), int(y))                                       # Get circle's center...
+                    r = int(r)                                                  # and radius
+                    pos = ( xy[0], xy[1], r )                                   # Pack co-ordinates
+                    
+                    if( is_inROI( pos ) ):                                      # Check if we are within ROI
+                        if( r_min+10 <= r and r <= r_max+10 ):                  # Check if within desired limit
+                            frame = add_overlay( overlay_frame,                 # Add overlay
+                                                 overlay_img,                   # ...
+                                                 frame, pos )                   # ...
+
+                            frame_failed = bool( False )                        # Set flag to false
+                            within_ROI   = bool( True  )                        # Set flag to true
+                            print( "(x, y, r) = ({}, {}, {})".format(pos[0], pos[1], pos[2]) )
+
 
         if( frame_failed and not within_ROI ):
             ROI = is_inROI( update_ROI=True )                                   # Reset ROI if necessary
-            
-        
 
     # Error handling (2/3)
     except Exception as error:
@@ -380,7 +417,10 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):
                                       interpolation = cv2.INTER_AREA )          # ...
             
             overlay_frame[ y_min:y_max, x_min:x_max] = overlay_img              # Place overlay image into overlay frame
-            
+            r_min       = cv2.getTrackbarPos( "minRadius"    , ver )                    # Get updated blob detector
+            r_max       = cv2.getTrackbarPos( "maxRadius"    , ver )                    # parameters
+            alpha_val = np.interp( r, [r_min, r_max], [0.0, 1.0] )
+            args["alpha"] = alpha_val
             frame = cv2.addWeighted( overlay_frame,                             # Join overlay frame (alpha)
                                      args["alpha"],                             # with actual frame (RGB)
                                      frame, 1.0, 0 )                            # ...
@@ -485,7 +525,7 @@ overlayImg = cv2.merge( [B, G, R, A] )                                          
 stream = PiVideoStream( resolution=(384, 288) ).start()                         # Start PiCam
 sleep( 0.25 )                                                                   # Sleep for stability
 realDisplay = True                                                              # Start with a normal display
-colorWipe(strip, Color(255, 255, 255, 255), 0)                                  # Turn ON LED ring
+colorWipe( strip, Color(255, 255, 255, 255), 0 )                                # Turn ON LED ring
 
 # Setup main window
 setup_windows()                                                                 # Create window and trackbars
@@ -498,23 +538,23 @@ params, detector = setup_detector()                                             
 ######
 ### Setup ROI
 ######
-global startTime, ROI, dx, dy
+global ROI, startTime
 startTime = time()
-timeout = 2.5
-dx, dy = 15, 15
-ROI_0 = [ (144-50, 108-50), (144+50, 108+50) ]
-ROI   = [ (144-50, 108-50), (144+50, 108+50) ]
+timeout = 2.00
+dx, dy, dROI = 35, 35, 65
+ROI_0 = [ (144-dROI, 108-dROI), (144+dROI, 108+dROI) ]
+ROI   = [ (144-dROI, 108-dROI), (144+dROI, 108+dROI) ]
 
 # ************************************************************************
 # =========================> MAKE IT ALL HAPPEN <=========================
 # ************************************************************************
 global lower_bound, upper_bound
 
-##lower_bound = np.array( [0,0,10] )
-##upper_bound = np.array( [255,255,195] )
+lower_bound = np.array( [0,0,10] )
+upper_bound = np.array( [255,255,195] )
 
-lower_bound = np.array( [ 0, 0, 0] )
-upper_bound = np.array( [75,75,75] )
+##lower_bound = np.array( [ 0, 0, 0] )
+##upper_bound = np.array( [75,75,75] )
 
 while( True ):
     # Capture frame
@@ -531,10 +571,10 @@ while( True ):
 
     # Find circles
     mask, closing = procFrame( image )                                          # Process image
-    image = find_pupil( mask, overlay, overlayImg, frame )                      # Scan for pupil
+    image = find_pupil( closing, overlay, overlayImg, frame )                      # Scan for pupil
     
     if( args["debug"] ):
-        cv2.rectangle( image, ROI_0[0], ROI_0[1], (0,0,255) ,2 )                # Draw initial ROI box
+        cv2.rectangle( image, ROI_0[0], ROI_0[1], (0, 0, 255) ,2 )              # Draw initial ROI box
         
     # Display feed
     if( realDisplay ):                                                          # Show real output
@@ -542,7 +582,7 @@ while( True ):
         cv2.imshow( CV_win, mask )                                              # ...
         key = cv2.waitKey(1) & 0xFF                                             # ...
     else:                                                                       # Show morphed image
-        cv2.imshow(ver, closing)                                                # ...
+        cv2.imshow( ver, closing )                                              # ...
         cv2.imshow( CV_win, mask )                                              # ...
         key = cv2.waitKey(1) & 0xFF                                             # ...
         
