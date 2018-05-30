@@ -46,7 +46,7 @@ from    timeStamp                       import  fullStamp           as  FS      
 from    imutils.video.pivideostream     import  PiVideoStream                   # Import threaded PiCam module
 from    imutils.video                   import  FPS                             # Benchmark FPS
 from    argparse                        import  ArgumentParser                  # Pass flags/parameters to script
-from    LEDRing                         import  *                               # Let there be light
+##from    LEDRing                         import  *                               # Let there be light
 from    time                            import  sleep, time                     # Time is essential to life
 
 # ************************************************************************
@@ -65,9 +65,7 @@ ap.add_argument( "-d", "--debug", action='store_true',
 
 args = vars( ap.parse_args() )
 
-args["debug"] = True
-args["overlay"] = "/home/pi/Desktop/BETA/Alpha/Retinol Artery Occlusion.png"
-
+##args["debug"] = True
 # ************************************************************************
 # =====================> DEFINE NECESSARY FUNCTIONS <=====================
 # ************************************************************************
@@ -121,8 +119,8 @@ def setup_windows():
     cv2.setMouseCallback( ver, control )                                        # Connect mouse events to actions
     cv2.createTrackbar( "minRadius"     , ver, 10 , 100, update_detector )      # Trackbars for blob detector
     cv2.createTrackbar( "maxRadius"     , ver, 40 , 100, update_detector )      # parameters.
-    cv2.createTrackbar( "Circularity"   , ver, 70 , 100, update_detector )#40      #     (used in find_pupil)
-    cv2.createTrackbar( "Convexity"     , ver, 40 , 100, update_detector )#15      # ...
+    cv2.createTrackbar( "Circularity"   , ver, 70 , 100, update_detector )#40   #     (used in find_pupil)
+    cv2.createTrackbar( "Convexity"     , ver, 40 , 100, update_detector )#15   # ...
     cv2.createTrackbar( "InertiaRatio"  , ver, 70 , 100, update_detector )      # ...
 
     # Setup window and trackbars for CV window
@@ -131,7 +129,7 @@ def setup_windows():
     cv2.createTrackbar( "0.BiMean\n1.BiGaussian\n2.BiMean-Inv\n3.BiGaussian-Inv",
                         CV_win, 0, 3, placeholder )                             # ...
     cv2.createTrackbar( "maxValue"      , CV_win, 255, 255, placeholder )       # Trackbars to modify adaptive
-    cv2.createTrackbar( "blockSize"     , CV_win, 175, 254, placeholder )#58       # thresholding parameters
+    cv2.createTrackbar( "blockSize"     , CV_win, 175, 254, placeholder )#58    # thresholding parameters
     cv2.createTrackbar( "cte"           , CV_win,  50, 100, placeholder )       #   (used in procFrame)
     cv2.createTrackbar( "GaussianBlur"  , CV_win,  40, 50 , placeholder )       # ...
 
@@ -268,7 +266,7 @@ def procFrame( image ):
                                                cte )                            # ...
 
         # Use erosion and dilation combination to eliminate false positives.
-        kernel = cv2.getStructuringElement( cv2.MORPH_ELLIPSE, ( 3, 3 ) )       # Define kernel for filters                         
+        kernel      = cv2.getStructuringElement( cv2.MORPH_ELLIPSE, ( 3, 3 ) )  # Define kernel for filters                         
         processed   = cv2.erode ( processed, kernel, iterations=6 )             # Erode over 6 passes
         processed   = cv2.dilate( processed, kernel, iterations=3 )             # Dilate over 3 passes
 
@@ -276,16 +274,18 @@ def procFrame( image ):
 
     # Error handling (2/3) 
     except:
+        kernel      = cv2.getStructuringElement( cv2.MORPH_ELLIPSE, ( 3, 3 ) )  # Define kernel for filters
         processed   = image                                                     # Reset image in case...
-        morphed     = cv2.morphologyEx( image, cv2.MORPH_GRADIENT, kernel )     # function done fucked up!
+        morphed     = cv2.morphologyEx( processed, cv2.MORPH_GRADIENT, kernel ) # function done fucked up!
         
-        cv2.createTrackbar( "maxValue"      , CV_win, 245, 255, placeholder )   # Reset trackbars
-        cv2.createTrackbar( "blockSize"     , CV_win, 175, 254, placeholder )#107   # ...
-        cv2.createTrackbar( "cte"           , CV_win,  50, 100, placeholder )   # ...
-        cv2.createTrackbar( "GaussianBlur"  , CV_win,  40,  50, placeholder )   # ...
+        cv2.createTrackbar( "maxValue"    , CV_win, 245, 255, placeholder )     # Reset trackbars
+        cv2.createTrackbar( "blockSize"   , CV_win, 175, 254, placeholder )#107 # ...
+        cv2.createTrackbar( "cte"         , CV_win,  50, 100, placeholder )     # ...
+        cv2.createTrackbar( "GaussianBlur", CV_win,  40,  50, placeholder )     # ...
 
     # Error handling (3/3)
     finally:
+        
         return( processed, morphed )                                            # Return
     
 # ------------------------------------------------------------------------
@@ -321,10 +321,12 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
         keypoints = detector.detect( gray )                                     # Launch blob detector
 
         if( len(keypoints) > 0 ):                                               # If blobs are found
-            if( initK ):
-                print( "[INFO] cv2.SimpleBlobDetector()" )
-                initC = True
-                initK = False
+            if( args["debug"] ):
+                if( initK ):
+                    initC = True 
+                    initK = False
+                    print( "[INFO] cv2.SimpleBlobDetector()" )
+                    
             for k in keypoints:                                                 # Iterate over found blobs
                 x, y, r = int(k.pt[0]), int(k.pt[1]), int(k.size/2)             # Get co-ordinates
                 pos = ( x, y, r )                                               # Pack co-ordinates
@@ -333,7 +335,7 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
                     frame = add_overlay( overlay_frame,                         # Add overlay
                                          overlay_img,                           # ...
                                          frame, pos )                           # ...
-                    print( "(x, y, r) = ({}, {}, {})".format(pos[0], pos[1], pos[2]) )
+                    
                     frame_failed = bool( False )                                # Set flag to false
                     within_ROI   = bool( True  )                                # Set flag to true
                     
@@ -348,10 +350,12 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
             
             # If circles are found draw them
             if( len(contours) > 0 ):                                            # Check if we detected anything
-                if( initC ):
-                    print( "[INFO] cv2.findContours()" )
-                    initC = False
-                    initK = True
+                if( args["debug"] ):
+                    if( initC ):
+                        initC = False
+                        initK = True                    
+                        print( "[INFO] cv2.findContours()" )
+                        
                 for c in contours:                                              # Iterate over all contours
                     (x, y) ,r = cv2.minEnclosingCircle(c)                       # Min enclosing circle inscribing contour
                     xy = (int(x), int(y))                                       # Get circle's center...
@@ -366,7 +370,6 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
 
                             frame_failed = bool( False )                        # Set flag to false
                             within_ROI   = bool( True  )                        # Set flag to true
-                            print( "(x, y, r) = ({}, {}, {})".format(pos[0], pos[1], pos[2]) )
 
 
         if( frame_failed and not within_ROI ):
@@ -411,7 +414,6 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):
 
     if( x_min > 0 and y_min > 0 ):
         if( x_max < w and y_max < h ):
-##            print( get_avg_color( frame, pos ) )                                # Get the average color of that region
             
             overlay_img = cv2.resize( overlay_img, ( 2*r, 2*r ),                # Resize overlay image to fit
                                       interpolation = cv2.INTER_AREA )          # ...
@@ -423,7 +425,7 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):
             args["alpha"] = alpha_val
             frame = cv2.addWeighted( overlay_frame,                             # Join overlay frame (alpha)
                                      args["alpha"],                             # with actual frame (RGB)
-                                     frame, 1.0, 0 )                            # ...
+                                     frame, 1.0, 0 )            # ...
 
             if( args["debug"] ):
                 cv2.circle( frame, (x, y), r, (0, 255, 0), 2 )                  # Draw a circle
