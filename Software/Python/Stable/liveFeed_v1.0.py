@@ -11,7 +11,7 @@
 *   -a/--alpha  : Specify transperancy level (0.0 - 1.0)
 *   -d/--debug  : Enable debugging
 *
-* VERSION: 1.1a
+* VERSION: 1.1.1a
 *   - ADDED   : Overlay an image/pathology
 *   - MODIFIED: Significantly reduced false-positives
 *   - ADDED   : Define a ROI. If blobs are detected outside
@@ -19,22 +19,21 @@
 *   - ADDED   : Store detected pupil color in BGR color space
 *   - MODIFIED: PUT THINGS IN FUNCTIONS FOR GOD'S SAKE!
 *   - ADDED   : Fallback to contour detection if BLOB fails
+*   - ADDED   : Switch overlays using left click
 *
 * KNOWN ISSUES:
-*   - Code is VERY buggy and lacks many of the previous
-*     functionalities (i.e threading, etc...)
 *   - Code logic is somewhat iffy and can be optimized
 *   - Unable to capture pupil when looking from the side (Solution IP)
 *
 * AUTHOR                    :   Mohammad Odeh
 * WRITTEN                   :   Aug   1st, 2016 Year of Our Lord
-* LAST CONTRIBUTION DATE    :   May. 24th, 2018 Year of Our Lord
+* LAST CONTRIBUTION DATE    :   Jul. 24th, 2018 Year of Our Lord
 *
 * ----------------------------------------------------------
 * ----------------------------------------------------------
 *
 * RIGHT CLICK: Shutdown Program.
-* LEFT CLICK: Toggle view.
+* LEFT CLICK : Switch Overlay.
 '''
 
 ver = "Live Feed Ver1.1a"
@@ -48,6 +47,14 @@ from    imutils.video                   import  FPS                             
 from    argparse                        import  ArgumentParser                  # Pass flags/parameters to script
 from    LEDRing                         import  *                               # Let there be light
 from    time                            import  sleep, time                     # Time is essential to life
+import  os, platform                                                            # Directory/file manipulation
+
+# ************************************************************************
+# ===================> DEFINE VALID OPERATING SYSTEM <===================*
+# ************************************************************************
+if( platform.system() != "Linux" ):
+    raise Exception( "{} is not supported. Please use a Linux based system.".format(platform.system()) )
+
 
 # ************************************************************************
 # =====================> CONSTRUCT ARGUMENT PARSER <=====================*
@@ -65,7 +72,7 @@ ap.add_argument( "-d", "--debug", action='store_true',
 
 args = vars( ap.parse_args() )
 
-args["debug"] = True
+##args["debug"] = True
 args["overlay"] = "/home/pi/Desktop/BETA/Alpha/Retina_w_blur_v2.png"
 # ************************************************************************
 # =====================> DEFINE NECESSARY FUNCTIONS <=====================
@@ -75,7 +82,7 @@ def control( event, x, y, flags, param ):
     '''
     Left/right click mouse events
     '''
-    global realDisplay
+    global realDisplay, overlayImg, counter
     
     # Right button shuts down program
     if( event == cv2.EVENT_RBUTTONDOWN ):                                       # If right-click, do shutdown clean up
@@ -92,9 +99,15 @@ def control( event, x, y, flags, param ):
         finally: 
             quit()                                                              # Shutdown python interpreter
      
-    # Left button toggles display
-    elif( event == cv2.EVENT_LBUTTONDOWN ):                                     # If left click, switch display
-        realDisplay = not( realDisplay )                                        # ...
+    # Left button switches overlays
+    elif( event == cv2.EVENT_LBUTTONDOWN ):                                     # If left-click, switch overlays
+        print( "[INFO] Loading {}".format(overlay_name_list[counter]) ) ,       # [INFO] ...
+        overlayImg = prepare_overlay( overlay_path_list[counter] )              # Switch overlay
+        print( "...DONE" )                                                      # [INFO] ...
+        counter += 1
+        
+        if( counter == len(overlay_path_list) ):
+            counter = 0
 
 # ------------------------------------------------------------------------
 
@@ -118,21 +131,21 @@ def setup_windows():
     # Setup main window
     cv2.namedWindow( ver )                                                      # Start a named window for output
     cv2.setMouseCallback( ver, control )                                        # Connect mouse events to actions
-    cv2.createTrackbar( "minRadius"     , ver, 10 , 100, update_detector )      # Trackbars for blob detector
-    cv2.createTrackbar( "maxRadius"     , ver, 40 , 100, update_detector )      # parameters.
-    cv2.createTrackbar( "Circularity"   , ver, 70 , 100, update_detector )#40   #     (used in find_pupil)
-    cv2.createTrackbar( "Convexity"     , ver, 40 , 100, update_detector )#15   # ...
-    cv2.createTrackbar( "InertiaRatio"  , ver, 70 , 100, update_detector )      # ...
+    cv2.createTrackbar( "minRadius"     , ver, 15 , 100, update_detector )      # Trackbars for blob detector
+    cv2.createTrackbar( "maxRadius"     , ver, 45 , 100, update_detector )      # parameters.
+    cv2.createTrackbar( "Circularity"   , ver, 42 , 100, update_detector )#40   #     (used in find_pupil)
+    cv2.createTrackbar( "Convexity"     , ver, 43 , 100, update_detector )#15   # ...
+    cv2.createTrackbar( "InertiaRatio"  , ver, 41 , 100, update_detector )      # ...
 
     # Setup window and trackbars for CV window
     CV_win = "CV Window"                                                        # Window's name
     cv2.namedWindow( CV_win )                                                   # Start a named window for CV
     cv2.createTrackbar( "0.BiMean\n1.BiGaussian\n2.BiMean-Inv\n3.BiGaussian-Inv",
-                        CV_win, 0, 3, placeholder )                             # ...
+                        CV_win, 1, 3, placeholder )                             # ...
     cv2.createTrackbar( "maxValue"      , CV_win, 255, 255, placeholder )       # Trackbars to modify adaptive
-    cv2.createTrackbar( "blockSize"     , CV_win, 175, 254, placeholder )#58    # thresholding parameters
+    cv2.createTrackbar( "blockSize"     , CV_win,  93, 254, placeholder )#58    # thresholding parameters
     cv2.createTrackbar( "cte"           , CV_win,  50, 100, placeholder )       #   (used in procFrame)
-    cv2.createTrackbar( "GaussianBlur"  , CV_win,  40, 50 , placeholder )       # ...
+    cv2.createTrackbar( "GaussianBlur"  , CV_win,  50, 50 , placeholder )       # ...
 
     return()
 
@@ -154,8 +167,8 @@ def setup_detector():
 	 
     # Filter by Area.
     parameters.filterByArea = True                                              # ...
-    parameters.minArea = np.pi * 10**2                                          # ...
-    parameters.maxArea = np.pi * 40**2                                          # ...
+    parameters.minArea = np.pi * 15**2                                          # ...
+    parameters.maxArea = np.pi * 45**2                                          # ...
 
     # Filter by color
     parameters.filterByColor = True                                             # ...
@@ -163,18 +176,18 @@ def setup_detector():
 
     # Filter by Circularity
     parameters.filterByCircularity = True                                       # ...
-    parameters.minCircularity = 0.70                                            # ...
+    parameters.minCircularity = 0.42                                            # ...
      
     # Filter by Convexity
     parameters.filterByConvexity = True                                         # ...
-    parameters.minConvexity = 0.40                                              # ...
+    parameters.minConvexity = 0.43                                              # ...
              
     # Filter by Inertia
     parameters.filterByInertia = True                                           # ...
-    parameters.minInertiaRatio = 0.70                                           # ...
+    parameters.minInertiaRatio = 0.41                                           # ...
 
     # Distance Between Blobs
-    parameters.minDistBetweenBlobs = 1000                                       # ...
+    parameters.minDistBetweenBlobs = 2000                                       # ...
              
     # Create a detector with the parameters
     detector = cv2.SimpleBlobDetector_create( parameters )                      # Create detector
@@ -243,7 +256,7 @@ def procFrame( image ):
         processed = cv2.inRange( image, lower_bound, upper_bound )
         processed = cv2.bilateralFilter( processed, 5, 17, 17 )
         processed = cv2.GaussianBlur( processed, (5, 5), GaussianBlur )
-
+        
         # Threshold any color that is not black to white (or vice versa)
         if( threshType == 0 ):
             processed = cv2.adaptiveThreshold( processed, maxValue,             # ...
@@ -272,17 +285,17 @@ def procFrame( image ):
         processed   = cv2.dilate( processed, kernel, iterations=3 )             # Dilate over 3 passes
 
         morphed     = cv2.morphologyEx( processed, cv2.MORPH_GRADIENT, kernel ) # Morph image for shits and gigs
-
+        
     # Error handling (2/3) 
     except:
         kernel      = cv2.getStructuringElement( cv2.MORPH_ELLIPSE, ( 3, 3 ) )  # Define kernel for filters
         processed   = image                                                     # Reset image in case...
         morphed     = cv2.morphologyEx( processed, cv2.MORPH_GRADIENT, kernel ) # function done fucked up!
         
-        cv2.createTrackbar( "maxValue"    , CV_win, 245, 255, placeholder )     # Reset trackbars
-        cv2.createTrackbar( "blockSize"   , CV_win, 175, 254, placeholder )#107 # ...
+        cv2.createTrackbar( "maxValue"    , CV_win, 255, 255, placeholder )     # Reset trackbars
+        cv2.createTrackbar( "blockSize"   , CV_win,  93, 254, placeholder )#107 # ...
         cv2.createTrackbar( "cte"         , CV_win,  50, 100, placeholder )     # ...
-        cv2.createTrackbar( "GaussianBlur", CV_win,  40,  50, placeholder )     # ...
+        cv2.createTrackbar( "GaussianBlur", CV_win,  50,  50, placeholder )     # ...
 
     # Error handling (3/3)
     finally:
@@ -364,7 +377,7 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
                     pos = ( xy[0], xy[1], r )                                   # Pack co-ordinates
                     
                     if( is_inROI( pos ) ):                                      # Check if we are within ROI
-                        if( r_min+10 <= r and r <= r_max+10 ):                  # Check if within desired limit
+                        if( r_min <= r and r <= r_max ):                        # Check if within desired limit
                             frame = add_overlay( overlay_frame,                 # Add overlay
                                                  overlay_img,                   # ...
                                                  frame, pos )                   # ...
@@ -382,11 +395,11 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
             print( "{} Error caught in find_pupil()".format(FS()) )             # Specify error type
             print( "{0} {1}".format(FS(), error) )                              # ...
 
-        cv2.createTrackbar( "minRadius"    , ver, 10 , 150, update_detector )   # Reset trackbars
-        cv2.createTrackbar( "maxRadius"    , ver, 40 , 150, update_detector )   # ...
-        cv2.createTrackbar( "Circularity"  , ver, 25 , 100, update_detector )   # ...
-        cv2.createTrackbar( "Convexity"    , ver, 15 , 100, update_detector )   # ...
-        cv2.createTrackbar( "InertiaRatio" , ver, 70 , 100, update_detector )   # ...
+        cv2.createTrackbar( "minRadius"    , ver, 15 , 150, update_detector )   # Reset trackbars
+        cv2.createTrackbar( "maxRadius"    , ver, 45 , 150, update_detector )   # ...
+        cv2.createTrackbar( "Circularity"  , ver, 42 , 100, update_detector )   # ...
+        cv2.createTrackbar( "Convexity"    , ver, 43 , 100, update_detector )   # ...
+        cv2.createTrackbar( "InertiaRatio" , ver, 41 , 100, update_detector )   # ...
 
     # Error handling (3/3)
     finally:
@@ -430,7 +443,7 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):
 
             if( args["debug"] ):
                 cv2.circle( frame, (x, y), r, (0, 255, 0), 2 )                  # Draw a circle
-                cv2.rectangle( frame, ROI[0], ROI[1], (255, 0, 0), 2 )          # Draw dynamic ROI rectangle
+##                cv2.rectangle( frame, ROI[0], ROI[1], (255, 0, 0), 2 )          # Draw dynamic ROI rectangle
             
     return( frame )
         
@@ -459,13 +472,13 @@ def get_avg_color( img, pos ):
 
 def is_inROI( xyr_points=None, update_ROI=False ):
     '''
-    Get the average color of the ROI
+    Determine if we are in the ROI
 
     INPUTS:
         - xyr_points: (x, y, r) co-ordinates
 
     OUTPUT:
-        - Return    : True/False
+        - inRoi     : True/False boolean
     '''
     
     global ROI, startTime
@@ -504,25 +517,62 @@ def is_inROI( xyr_points=None, update_ROI=False ):
         else: pass                                                              # within ROI
 
         return( inROI )
+
+# ------------------------------------------------------------------------
+
+def prepare_overlay( img=None ):
+    '''
+    Load and prepare overlay images
+
+    INPUTS:
+        - img:     RAW   overlay iamge
+
+    OUTPUT:
+        - img: Processed overlay image
+    '''
     
+    # Check whether an overlay is specified
+    if( img != None ):
+        img = cv2.imread( img, cv2.IMREAD_UNCHANGED )                           # Load specific overlay
+    else:
+        src = "/home/pi/Desktop/BETA/Overlay.png"                               # Load default overlay
+        img = cv2.imread( src  , cv2.IMREAD_UNCHANGED )                         # ...
+
+    # Load overlay image with Alpha channel
+    ( wH, wW ) = img.shape[:2]                                                  # Get dimensions
+    ( B, G, R, A ) = cv2.split( img )                                           # Split into constituent channels
+    B = cv2.bitwise_and( B, B, mask=A )                                         # Add the Alpha to the B channel
+    G = cv2.bitwise_and( G, G, mask=A )                                         # Add the Alpha to the G channel
+    R = cv2.bitwise_and( R, R, mask=A )                                         # Add the Alpha to the R channel
+    img = cv2.merge( [B, G, R, A] )                                             # Finally, merge them back
+
+    return( img )                                                               # Return processed overlay
+
 # ************************************************************************
 # ===========================> SETUP PROGRAM <===========================
 # ************************************************************************
 
-# Check whether an overlay is specified
-if( args["overlay"] != None ):
-    overlayImg = cv2.imread( args["overlay"], cv2.IMREAD_UNCHANGED )            # Load specific overlay
-else:
-    src = "/home/pi/Desktop/BETA/Overlay.png"                                   # Load default overlay
-    overlayImg = cv2.imread( src  , cv2.IMREAD_UNCHANGED )                      # ...
+# List overlays
+current_path     = os.getcwd()                                                  # Get current working directory
+overlay_path     = current_path + "/Alpha"                                      # Path to overlays
+overlay_path_list= []                                                           # List of images w\ full path
+overlay_name_list= []                                                           # List of images' names
+valid_extensions = [ ".png" ]                                                   # Allowable image extensions
 
-# Load overlay image with Alpha channel
-( wH, wW ) = overlayImg.shape[:2]                                               # Get dimensions
-( B, G, R, A ) = cv2.split( overlayImg )                                        # Split into constituent channels
-B = cv2.bitwise_and( B, B, mask=A )                                             # Add the Alpha to the B channel
-G = cv2.bitwise_and( G, G, mask=A )                                             # Add the Alpha to the G channel
-R = cv2.bitwise_and( R, R, mask=A )                                             # Add the Alpha to the R channel
-overlayImg = cv2.merge( [B, G, R, A] )                                          # Finally, merge them back
+for file in os.listdir( overlay_path ):                                         # Loop over images in directory
+    extension    = os.path.splitext( file )[1]                                  # Get file's extensions
+
+    if( extension.lower() not in valid_extensions ):                            # If extensions is not in valid
+        continue                                                                # list, skip it.
+
+    else:                                                                       # Else, append full file path
+        overlay_path_list.append( os.path.join(overlay_path, file) )            # to list.
+        overlay_name_list.append( os.path.splitext(file)[0] )                   # ...
+        
+# Prepare overlay
+global overlayImg, counter
+counter     = 0                                                                 # Overlay switcher counter
+overlayImg  = prepare_overlay( args["overlay"] )                                # Prepare and process overlay
 
 # Setup camera (x,y)
 stream = PiVideoStream( resolution=(384, 288) ).start()                         # Start PiCam
@@ -533,7 +583,7 @@ colorWipe( strip, Color(255, 255, 255, 255), 0 )                                
 # Setup main window
 setup_windows()                                                                 # Create window and trackbars
 
-## Setup BlobDetector
+# Setup BlobDetector
 global detector, params
 params, detector = setup_detector()                                             # Create BLOB detector + define params
 
@@ -543,7 +593,7 @@ params, detector = setup_detector()                                             
 ######
 global ROI, startTime
 startTime = time()
-timeout = 2.00
+timeout = 1.00
 dx, dy, dROI = 35, 35, 65
 ROI_0 = [ (144-dROI, 108-dROI), (144+dROI, 108+dROI) ]
 ROI   = [ (144-dROI, 108-dROI), (144+dROI, 108+dROI) ]
@@ -553,11 +603,20 @@ ROI   = [ (144-dROI, 108-dROI), (144+dROI, 108+dROI) ]
 # ************************************************************************
 global lower_bound, upper_bound
 
-lower_bound = np.array( [0,0,10] )
-upper_bound = np.array( [255,255,195] )
+##lower_bound = np.array( [  0,   0,  10], dtype = np.uint8 )
+##upper_bound = np.array( [255, 255, 195], dtype = np.uint8 )
 
-##lower_bound = np.array( [ 0, 0, 0] )
-##upper_bound = np.array( [75,75,75] )
+##lower_bound = np.array( [  0,   0,   0], dtype = np.uint8 )
+##upper_bound = np.array( [ 75,  75,  75], dtype = np.uint8 )
+
+##lower_bound = np.array( [  0,   0,  10], dtype = np.uint8 )
+##upper_bound = np.array( [150, 150, 160], dtype = np.uint8 )
+
+##lower_bound = np.array( [  0,   0,  10], dtype = np.uint8 )
+##upper_bound = np.array( [200, 200, 210], dtype = np.uint8 )
+
+lower_bound = np.array( [  0,   0,   0], dtype = np.uint8 )
+upper_bound = np.array( [180, 255,  30], dtype = np.uint8 )
 
 while( True ):
     # Capture frame
@@ -576,8 +635,8 @@ while( True ):
     mask, closing = procFrame( image )                                          # Process image
     image = find_pupil( closing, overlay, overlayImg, frame )                   # Scan for pupil
     
-    if( args["debug"] ):
-        cv2.rectangle( image, ROI_0[0], ROI_0[1], (0, 0, 255) ,2 )              # Draw initial ROI box
+##    if( args["debug"] ):
+##        cv2.rectangle( image, ROI_0[0], ROI_0[1], (0, 0, 255) ,2 )              # Draw initial ROI box
         
     # Display feed
     if( realDisplay ):                                                          # Show real output
