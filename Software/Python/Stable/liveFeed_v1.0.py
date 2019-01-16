@@ -45,7 +45,7 @@ from    timeStamp                       import  fullStamp           as  FS      
 from    imutils.video.pivideostream     import  PiVideoStream                   # Import threaded PiCam module
 from    imutils.video                   import  FPS                             # Benchmark FPS
 from    argparse                        import  ArgumentParser                  # Pass flags/parameters to script
-from    LEDRing                         import  *                               # Let there be light
+##from    LEDRing                         import  *                               # Let there be light
 from    time                            import  sleep, time                     # Time is essential to life
 import  os, platform                                                            # Directory/file manipulation
 
@@ -73,7 +73,7 @@ ap.add_argument( "-d", "--debug", action='store_true',
 args = vars( ap.parse_args() )
 
 ##args["debug"] = True
-args["overlay"] = "/home/pi/Desktop/BETA/Alpha/Retina_w_blur_v2.png"
+args["overlay"] = "/home/pi/Desktop/AugmentedOphthalmoscope/Alpha/Retina_w_blur_v3.png"
 # ************************************************************************
 # =====================> DEFINE NECESSARY FUNCTIONS <=====================
 # ************************************************************************
@@ -87,7 +87,7 @@ def control( event, x, y, flags, param ):
     # Right button shuts down program
     if( event == cv2.EVENT_RBUTTONDOWN ):                                       # If right-click, do shutdown clean up
         try:
-            colorWipe(strip, Color(0, 0, 0, 0), 0)                              # Turn OFF LED ring
+##            colorWipe(strip, Color(0, 0, 0, 0), 0)                              # Turn OFF LED ring
             stream.stop()                                                       # Stop capturing frames from stream
             cv2.destroyAllWindows()                                             # Close any open windows
             
@@ -130,10 +130,12 @@ def setup_windows():
     
     # Setup main window
     cv2.namedWindow( ver )                                                      # Start a named window for output
+    cv2.namedWindow( ver, cv2.WND_PROP_FULLSCREEN )                                                      # Start a named window for output
+    cv2.setWindowProperty( ver, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN )
     cv2.setMouseCallback( ver, control )                                        # Connect mouse events to actions
     cv2.createTrackbar( "minRadius"     , ver, 15 , 100, update_detector )      # Trackbars for blob detector
-    cv2.createTrackbar( "maxRadius"     , ver, 45 , 100, update_detector )      # parameters.
-    cv2.createTrackbar( "Circularity"   , ver, 42 , 100, update_detector )#40   #     (used in find_pupil)
+    cv2.createTrackbar( "maxRadius"     , ver, 40 , 100, update_detector )      # parameters.
+    cv2.createTrackbar( "Circularity"   , ver, 26 , 100, update_detector )#40   #     (used in find_pupil)
     cv2.createTrackbar( "Convexity"     , ver, 43 , 100, update_detector )#15   # ...
     cv2.createTrackbar( "InertiaRatio"  , ver, 41 , 100, update_detector )      # ...
 
@@ -141,10 +143,10 @@ def setup_windows():
     CV_win = "CV Window"                                                        # Window's name
     cv2.namedWindow( CV_win )                                                   # Start a named window for CV
     cv2.createTrackbar( "0.BiMean\n1.BiGaussian\n2.BiMean-Inv\n3.BiGaussian-Inv",
-                        CV_win, 1, 3, placeholder )                             # ...
+                        CV_win, 2, 3, placeholder )                             # ...
     cv2.createTrackbar( "maxValue"      , CV_win, 255, 255, placeholder )       # Trackbars to modify adaptive
-    cv2.createTrackbar( "blockSize"     , CV_win,  93, 254, placeholder )#58    # thresholding parameters
-    cv2.createTrackbar( "cte"           , CV_win,  50, 100, placeholder )       #   (used in procFrame)
+    cv2.createTrackbar( "blockSize"     , CV_win, 102, 254, placeholder )#58    # thresholding parameters
+    cv2.createTrackbar( "cte"           , CV_win, 100, 100, placeholder )       #   (used in procFrame)
     cv2.createTrackbar( "GaussianBlur"  , CV_win,  50, 50 , placeholder )       # ...
 
     return()
@@ -168,7 +170,7 @@ def setup_detector():
     # Filter by Area.
     parameters.filterByArea = True                                              # ...
     parameters.minArea = np.pi * 15**2                                          # ...
-    parameters.maxArea = np.pi * 45**2                                          # ...
+    parameters.maxArea = np.pi * 40**2                                          # ...
 
     # Filter by color
     parameters.filterByColor = True                                             # ...
@@ -176,7 +178,7 @@ def setup_detector():
 
     # Filter by Circularity
     parameters.filterByCircularity = True                                       # ...
-    parameters.minCircularity = 0.42                                            # ...
+    parameters.minCircularity = 0.26                                            # ...
      
     # Filter by Convexity
     parameters.filterByConvexity = True                                         # ...
@@ -187,7 +189,7 @@ def setup_detector():
     parameters.minInertiaRatio = 0.41                                           # ...
 
     # Distance Between Blobs
-    parameters.minDistBetweenBlobs = 2000                                       # ...
+    parameters.minDistBetweenBlobs = 20000                                       # ...
              
     # Create a detector with the parameters
     detector = cv2.SimpleBlobDetector_create( parameters )                      # Create detector
@@ -346,6 +348,7 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
                 pos = ( x, y, r )                                               # Pack co-ordinates
                 
                 if( is_inROI( pos ) ):                                          # Check if we are within ROI
+##                if( True ): 
                     frame = add_overlay( overlay_frame,                         # Add overlay
                                          overlay_img,                           # ...
                                          frame, pos )                           # ...
@@ -377,6 +380,7 @@ def find_pupil( processed, overlay_frame, overlay_img, frame ):
                     pos = ( xy[0], xy[1], r )                                   # Pack co-ordinates
                     
                     if( is_inROI( pos ) ):                                      # Check if we are within ROI
+##                    if( True ):
                         if( r_min <= r and r <= r_max ):                        # Check if within desired limit
                             frame = add_overlay( overlay_frame,                 # Add overlay
                                                  overlay_img,                   # ...
@@ -438,7 +442,7 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):
             alpha_val = np.interp( r, [r_min, r_max], [0.0, 1.0] )
             args["alpha"] = alpha_val
             frame = cv2.addWeighted( overlay_frame,                             # Join overlay frame (alpha)
-                                     args["alpha"],                             # with actual frame (RGB)
+                                     0.50,                             # with actual frame (RGB)
                                      frame, 1.0, 0 )            # ...
 
             if( args["debug"] ):
@@ -578,7 +582,7 @@ overlayImg  = prepare_overlay( args["overlay"] )                                
 stream = PiVideoStream( resolution=(384, 288) ).start()                         # Start PiCam
 sleep( 0.25 )                                                                   # Sleep for stability
 realDisplay = True                                                              # Start with a normal display
-colorWipe( strip, Color(255, 255, 255, 255), 0 )                                # Turn ON LED ring
+##colorWipe( strip, Color(255, 255, 255, 255), 0 )                                # Turn ON LED ring
 
 # Setup main window
 setup_windows()                                                                 # Create window and trackbars
@@ -593,7 +597,7 @@ params, detector = setup_detector()                                             
 ######
 global ROI, startTime
 startTime = time()
-timeout = 1.00
+timeout = 1.5
 dx, dy, dROI = 35, 35, 65
 ROI_0 = [ (144-dROI, 108-dROI), (144+dROI, 108+dROI) ]
 ROI   = [ (144-dROI, 108-dROI), (144+dROI, 108+dROI) ]
@@ -603,8 +607,8 @@ ROI   = [ (144-dROI, 108-dROI), (144+dROI, 108+dROI) ]
 # ************************************************************************
 global lower_bound, upper_bound
 
-##lower_bound = np.array( [  0,   0,  10], dtype = np.uint8 )
-##upper_bound = np.array( [255, 255, 195], dtype = np.uint8 )
+lower_bound = np.array( [  0,   0,  10], dtype = np.uint8 )
+upper_bound = np.array( [255, 255, 195], dtype = np.uint8 )
 
 ##lower_bound = np.array( [  0,   0,   0], dtype = np.uint8 )
 ##upper_bound = np.array( [ 75,  75,  75], dtype = np.uint8 )
@@ -615,8 +619,8 @@ global lower_bound, upper_bound
 ##lower_bound = np.array( [  0,   0,  10], dtype = np.uint8 )
 ##upper_bound = np.array( [200, 200, 210], dtype = np.uint8 )
 
-lower_bound = np.array( [  0,   0,   0], dtype = np.uint8 )
-upper_bound = np.array( [180, 255,  30], dtype = np.uint8 )
+##lower_bound = np.array( [  0,   0,   0], dtype = np.uint8 )
+##upper_bound = np.array( [180, 255,  30], dtype = np.uint8 )
 
 while( True ):
     # Capture frame
@@ -635,8 +639,8 @@ while( True ):
     mask, closing = procFrame( image )                                          # Process image
     image = find_pupil( closing, overlay, overlayImg, frame )                   # Scan for pupil
     
-##    if( args["debug"] ):
-##        cv2.rectangle( image, ROI_0[0], ROI_0[1], (0, 0, 255) ,2 )              # Draw initial ROI box
+    if( args["debug"] ):
+        cv2.rectangle( image, ROI_0[0], ROI_0[1], (0, 0, 255) ,2 )              # Draw initial ROI box
         
     # Display feed
     if( realDisplay ):                                                          # Show real output
