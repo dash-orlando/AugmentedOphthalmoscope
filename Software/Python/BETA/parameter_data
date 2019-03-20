@@ -1,10 +1,10 @@
 {
     "blobparam": [
         {
+            "minCircularity": 0.25999999046325684, 
             "minDistBetweenBlobs": 2000.0, 
             "minArea": 706.8583374023438, 
             "color": 255, 
-            "minCirularity": 0.25999999046325684, 
             "minConvexity": 0.0, 
             "minInertiaRatio": 0.0, 
             "maxArea": 282743.34375
@@ -12,16 +12,16 @@
     ], 
     "maxHSV": [
         {
-            "maxS": 255, 
-            "maxH": 255, 
+            "maxS": 175, 
+            "maxH": 114, 
             "maxV": 255
         }
     ], 
     "minHSV": [
         {
-            "minH": 0, 
-            "minS": 25, 
-            "minV": 0
+            "minH": 3, 
+            "minS": 64, 
+            "minV": 73
         }
     ]
 }

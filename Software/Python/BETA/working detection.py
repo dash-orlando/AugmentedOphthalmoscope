@@ -263,7 +263,7 @@ def pupil_detect():
 #--------------------------------------------------
 
 ##HSV_Finder()
-pupil_detect()
+##pupil_detect()
 ##
           
 
