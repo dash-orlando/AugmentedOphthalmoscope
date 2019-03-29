@@ -211,9 +211,8 @@ def procFrame( image, minHSV=None, maxHSV=None ):
     x, y, d = width/2, height/2 ,100
     ROI = image[y-d:y+d, x-d:x+d]
     cv2.circle(ROI,(320,240),70,1,thickness=-1)
-    # Roi for the detecting function (faster and more reliable)
     ROI = cv2.cvtColor( ROI, cv2.COLOR_BGR2Lab)
-    # switches to from RGB colorspace to LAB colorspace
+    #switches to from RGB colorspace to HSV colorspace
     # min and max HSV values found from Range_Finder function
     if np.all(minHSV == None) and np.all(maxHSV == None):
         v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = get_trackbar_values()
@@ -232,24 +231,26 @@ def prepare_overlay( img=None ):
     # Check whether an overlay is specified
     if( img != None ):
         # Load specific overlay
-        img = cv2.imread( img, cv2.IMREAD_UNCHANGED )                           
+        img = cv2.imread( img, cv2.IMREAD_UNCHANGED )
+        img.astype(float)
     else:
-        src = "/home/pi/pd3d/repos/AugmentedOphthalmoscope/Software/Python/BETA/Alpha/AMD_feathered.png"
+        src = "/home/pi/pd3d/repos/AugmentedOphthalmoscope/Software/Python/BETA/Alpha/armd.jpeg"
         # Load default overlay
         img = cv2.imread( src  , cv2.IMREAD_UNCHANGED )
-        # Load overlay image with Alpha channel
+        img.astype(float)
+        
     
-    # Split into constituent channels
-    ( B, G, R, A ) = cv2.split( img )
-    # Add the Alpha to the B channel
-    B = cv2.bitwise_and( B, B, mask=A )
-    # Add the Alpha to the G channel
-    G = cv2.bitwise_and( G, G, mask=A )
-    # Add the Alpha to the R channel
-    R = cv2.bitwise_and( R, R, mask=A )
-    # Finally, merge them back
-    img = cv2.merge( [B, G, R, A] )
+    
+    # Get dimensions
+    ( height, width ) = img.shape[:2]
+    r = 20
+    alpha = np.zeros((width,height,3),dtype=np.uint8)
+    cv2.circle(alpha,(width/2,height/2),r,(255,255,255),-1,8,0)
+    alpha.astype(float)/255
+    img = cv2.multiply(alpha, img)
+    
 
+                                           
 
     return( img )                                                                   # Return processed overlay
 
@@ -280,18 +281,17 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):                      
             # Resize overlay image to fit
             overlay_img = cv2.resize( overlay_img,  dim,
                                       interpolation=cv2.INTER_AREA )
-            dark_circle = frame.copy()
-            cv2.circle(dark_circle,(x,y),r_scaled-4, color=(0,0,0),thickness=-1)
-            dark_circle = cv2.GaussianBlur( dark_circle, (5, 5), 25 )
-            cv2.addWeighted(frame, 0.5, dark_circle, 0.5, 0, frame)
+##            dark_circle = frame.copy()
+##            cv2.circle(dark_circle,(x,y),r_scaled, color=(0,0,0),thickness=-1)
+##            cv2.addWeighted(frame, 0.5, dark_circle, 0.5, 0, frame)
             
             # Place overlay image into overlay frame
             overlay_frame[ y_min:y_max, x_min:x_max] = overlay_img              
 
             # Join overlay frame (alpha) with actual frame (RGB)
             frame = cv2.addWeighted( overlay_frame,                             
-                                     0.5,                              
-                                     frame, 1, 0 )
+                                     1,                              
+                                     frame, 1, 0 )            
 
     return( frame )                                                                  # returns the frame with overlay added
 
@@ -387,7 +387,7 @@ def read_parameters( filename='parameter_data' ):
 ##stream = cv2.VideoCapture("rtsp://{ip}/av0_1".format(ip = ip))
 stream = cv2.VideoCapture(args.stream)
 
-overlayImg = prepare_overlay("/home/pi/pd3d/repos/AugmentedOphthalmoscope/Software/Python/BETA/Alpha/AMD_feathered.png")
+overlayImg = prepare_overlay("/home/pi/pd3d/repos/AugmentedOphthalmoscope/Software/Python/BETA/Alpha/armd.jpeg")
 
 
 if(args.setvalues):
