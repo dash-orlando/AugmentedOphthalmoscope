@@ -2,7 +2,8 @@ import numpy                                    as np       # Always behind the 
 import requests                                             # Allows the program to send organic, grass-fed HTTP requests
 import cv2                                                  # It's always a good idea to give vision to computers
 import json                                                 # Allows the program to write and read parameters for tracking 
-import argparse                                             # Screw IDLE
+import argparse                                             # CMD FTW
+import os, platform
 
 #---------setting up argparse-----------
 
@@ -10,6 +11,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-v", "--setvalues", action="store_true", help="allows you to set the program parameters")
 parser.add_argument("-s", "--stream", default="rtsp://192.168.1.88/av0_1", type=str, help="sets the path to the\
 image file, if none given goes to stream")
+parser.add_argument("-o", "--overlay", required=False, type=str, help="sets the path to desired\
+overlay image")
 args = parser.parse_args()
 
 #---------setting up Camera class-----------
@@ -77,40 +80,59 @@ camera = Camera()  # For easier access
 
 #---------setting up Tracking and Overlaying Functions-----------
 
+def control( event, x, y, flags, param ):
+    '''
+    Left click mouse events for overlay switching
+    '''
+    global overlayImg, counter
+     
+    # Left button switches overlays
+    if( event == cv2.EVENT_LBUTTONDOWN ):                                       # If left-click, switch overlays
+        print( "[INFO] Loading {}".format(overlay_name_list[counter]) ) ,       
+        overlayImg = prepare_overlay( overlay_path_list[counter] )              # Switch overlay
+        print( "...DONE" )                                                      
+        counter += 1
+        
+        if( counter == len(overlay_path_list) ):
+            counter = 0
+
 def placeholder( x ):
-    # Needed for trackbar functinality
+    ''' Needed for trackbar functinality'''
     pass
 def placeholder2( x ):
-    # Needed for trackbar functinality
+    ''' Needed for trackbar functinality'''
     pass
 def placeholder3( x ):
-    # Needed for trackbar functinality
+    ''' Needed for trackbar functinality'''
     pass
+
 #-----
 
 def setup_windows2():
-    # Sets up overlay scaling window for final display
+    ''' Sets up overlay scaling window for final display'''
     cv2.namedWindow( "ScaleBar" )
     cv2.moveWindow("ScaleBar", 0, 0)  # Sets window postion to top left of display
     cv2.createTrackbar( "OverlayScaleValue", "ScaleBar", 100, 200, placeholder2 )
-##    cv2.createTrackbar( "OverlayAlphaValue", "ScaleBar", 50, 100, placeholder2 )
+    cv2.setMouseCallback( "ScaleBar", control )
+
     return
 def setup_windows():
+    ''' Sets up all main windows for value tuning'''
     # Sets up overlay scaling window
     cv2.namedWindow( "ScaleBar" )
     cv2.moveWindow("ScaleBar", 0, 0)  # Sets window postion to top middle of display
     cv2.createTrackbar( "OverlayScaleValue", "ScaleBar", 100, 200, placeholder2 )
-##    cv2.createTrackbar( "OverlayAlphaValue", "ScaleBar", 50, 100, placeholder2 )
+    cv2.setMouseCallback( "ScaleBar", control )
     # Setup blob detecting window
     cv2.namedWindow( "BlobParamsBar" )                                                  
     cv2.moveWindow("BlobParamsBar", 640, 0)
     # Trackbars for Blobdetector parameters
     cv2.createTrackbar( "Black = 0 White = 255"  , "BlobParamsBar", 255, 255, placeholder )
-    cv2.createTrackbar( "minRadius"              , "BlobParamsBar", 15 , 100, placeholder )
-    cv2.createTrackbar( "maxRadius"              , "BlobParamsBar", 300 , 500, placeholder )
-    cv2.createTrackbar( "Circularity"            , "BlobParamsBar", 26 , 100, placeholder )
-    cv2.createTrackbar( "Convexity"              , "BlobParamsBar", 43 , 100, placeholder )
-    cv2.createTrackbar( "InertiaRatio"           , "BlobParamsBar", 41 , 100, placeholder )
+    cv2.createTrackbar( "minRadius"              , "BlobParamsBar", 10 , 100, placeholder )
+    cv2.createTrackbar( "maxRadius"              , "BlobParamsBar", 20 , 100, placeholder )
+    cv2.createTrackbar( "Circularity"            , "BlobParamsBar", 50 , 100, placeholder )
+    cv2.createTrackbar( "Convexity"              , "BlobParamsBar", 50 , 100, placeholder )
+    cv2.createTrackbar( "InertiaRatio"           , "BlobParamsBar", 50 , 100, placeholder )
     # Trackbars for HSV parameters
     cv2.namedWindow("HSVbars", 0)
     cv2.moveWindow("HSVbars", 1280, 0)  # Sets window postion to top right of display
@@ -123,12 +145,12 @@ def setup_windows():
 #-----
 
 def ScaleBar_update():
-    # Updates the ScaleBar value for functions
+    ''' Updates the ScaleBar value for functions'''
     scale_val = cv2.getTrackbarPos( "OverlayScaleValue", "ScaleBar" )
     alpha_val = cv2.getTrackbarPos( "OverlayScaleValue", "ScaleBar" )
     return( scale_val)
 def update_detector():
-    # Updates Blobdetector parameters for functions
+    ''' Updates Blobdetector parameters for functions'''
     global detector, parameters
     parameters = cv2.SimpleBlobDetector_Params()
     # Retrieves parameters from trackbars realtime
@@ -160,7 +182,7 @@ def update_detector():
     detector = cv2.SimpleBlobDetector_create( parameters )                           
     return( parameters, detector )
 def get_trackbar_values():
-    # Gets the currect trackbar values and returns them
+    ''' Gets the currect trackbar values and returns them'''
     values = []
     for i in ["MIN", "MAX"]:
         for j in "HSV":
@@ -172,7 +194,7 @@ def get_trackbar_values():
 #-----
 
 def setup_detector():                                                               
-    # sets up detector with specified parameters for use in blob detector
+    ''' Sets up detector with specified parameters for use in blob detector'''
     # Parameters for blob detector
     parameters = cv2.SimpleBlobDetector_Params()                                          
     # Filter by Area.
@@ -202,7 +224,7 @@ def setup_detector():
 
 
 def procFrame( image, minHSV=None, maxHSV=None ):
-    '''procceses image so it is more reliable in blob detection
+    ''' Procceses image so it is more reliable in blob detection
     takes in image; and possibly minHSV, and maxHSV values to proccess image
     if values are given it runs the proccessing, or else it takes HSV values
     from the running trackbars
@@ -213,8 +235,8 @@ def procFrame( image, minHSV=None, maxHSV=None ):
     cv2.circle(ROI,(320,240),70,1,thickness=-1)
     # Roi for the detecting function (faster and more reliable)
     ROI = cv2.cvtColor( ROI, cv2.COLOR_BGR2Lab)
-    # switches to from RGB colorspace to LAB colorspace
-    # min and max HSV values found from Range_Finder function
+    # Switches to from RGB colorspace to LAB colorspace
+    # Min and max HSV values found from Range_Finder function
     if np.all(minHSV == None) and np.all(maxHSV == None):
         v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = get_trackbar_values()
         minHSV = np.array([v1_min, v2_min, v3_min])
@@ -229,12 +251,13 @@ def procFrame( image, minHSV=None, maxHSV=None ):
 #-----
 
 def prepare_overlay( img=None ):
+    ''' Prepares the overlay with an alpha channel'''
     # Check whether an overlay is specified
     if( img != None ):
         # Load specific overlay
         img = cv2.imread( img, cv2.IMREAD_UNCHANGED )                           
     else:
-        src = "/home/pi/pd3d/repos/AugmentedOphthalmoscope/Software/Python/BETA/Alpha/AMD_feathered.png"
+        src = "/home/pi/pd3d/repos/AugmentedOphthalmoscope/Software/Python/BETA/Alpha/Age-related macular degeneration.png"
         # Load default overlay
         img = cv2.imread( src  , cv2.IMREAD_UNCHANGED )
         # Load overlay image with Alpha channel
@@ -251,19 +274,19 @@ def prepare_overlay( img=None ):
     img = cv2.merge( [B, G, R, A] )
 
 
-    return( img )                                                                   # Return processed overlay
+    return( img )                                           
 
 #-----
 
-def add_overlay( overlay_frame, overlay_img, frame, pos ):                          # scales, adds alpha weight, and overlays onto image
+def add_overlay( overlay_frame, overlay_img, frame, pos ):
+    ''' Scales, adds alpha weight, and overlays onto image'''
 
     # Unpack co-ordinates
     x, y, r = pos
     x = x+220
     y = y+140
     
-    # scale factor DO NOT SET TO ****ZERO**** bad things happen, like explosive things, bye bye program!!!
-    
+    # Scale factor DO NOT SET TO ****ZERO**** bad things happen, like explosive things, bye bye program!!!
     scale_val = ScaleBar_update()
     r_scaled = r * scale_val / 100
     width = 2 * r_scaled
@@ -278,26 +301,28 @@ def add_overlay( overlay_frame, overlay_img, frame, pos ):                      
     if( x_min > 0 and y_min > 0 ):
         if( x_max < w and y_max < h ):
             # Resize overlay image to fit
-            overlay_img = cv2.resize( overlay_img,  dim,
-                                      interpolation=cv2.INTER_AREA )
+            overlay_img = cv2.resize( overlay_img, dim, interpolation=cv2.INTER_AREA )
             dark_circle = frame.copy()
             cv2.circle(dark_circle,(x,y),r_scaled-4, color=(0,0,0),thickness=-1)
             dark_circle = cv2.GaussianBlur( dark_circle, (5, 5), 25 )
-            cv2.addWeighted(frame, 0.5, dark_circle, 0.5, 0, frame)
+            cv2.addWeighted(frame, 0.3, dark_circle, 0.7, 0, frame)
             
             # Place overlay image into overlay frame
             overlay_frame[ y_min:y_max, x_min:x_max] = overlay_img              
 
             # Join overlay frame (alpha) with actual frame (RGB)
             frame = cv2.addWeighted( overlay_frame,                             
-                                     0.5,                              
+                                     1,                              
                                      frame, 1, 0 )
 
-    return( frame )                                                                  # returns the frame with overlay added
+    return( frame )
 
 #-----
 
 def find_pupil( processed, overlay_frame, overlay_img, frame, parameters=None ):
+    ''' Finds keypoints using parameter data and blob detector for positional
+    data for the overlay
+    '''
 
     # Launch blob detector
     if parameters == None:
@@ -320,12 +345,17 @@ def find_pupil( processed, overlay_frame, overlay_img, frame, parameters=None ):
             frame = add_overlay( overlay_frame,                         
                                      overlay_img,                           
                                      frame, pos )
+    height,width,depth = frame.shape
+    x, y, d = (width+20)/2, height/2 ,100
+    ROI = image[y-d:y+d, x-d:x+d]
+    ROI = cv2.resize(ROI, (640,480), interpolation=cv2.INTER_AREA)
 
-    return( frame, img_detected, parameters )
+    return( ROI, img_detected, parameters )
 
 #-----
 
 def write_parameters( minHSV, maxHSV, parameters ):
+    ''' Writes down parameter data in a JSON file for later extraction after program reset'''
     param_dict = {}
     param_dict['minHSV'] = []
     param_dict['minHSV'].append({
@@ -355,6 +385,7 @@ def write_parameters( minHSV, maxHSV, parameters ):
 #-----
 
 def read_parameters( filename='parameter_data' ):
+    ''' Reads parameter data in a JSON file for new program reset window'''
     parameters = cv2.SimpleBlobDetector_Params()
     with open( filename ) as json_file:   
         param_dict = json.load(json_file)
@@ -380,113 +411,120 @@ def read_parameters( filename='parameter_data' ):
     return ( parameters, minHSV, maxHSV )
                     
 #---------Running the program-----------
-    
-##set_values = False
 
-##ip = camera.ip
-##stream = cv2.VideoCapture("rtsp://{ip}/av0_1".format(ip = ip))
-stream = cv2.VideoCapture(args.stream)
+stream = cv2.VideoCapture(args.stream)  # Stream info from argparse
 
-overlayImg = prepare_overlay("/home/pi/pd3d/repos/AugmentedOphthalmoscope/Software/Python/BETA/Alpha/AMD_feathered.png")
+current_path     = os.getcwd()  # Get current working directory
+overlay_path     = current_path + "/Alpha"  # Path to overlays
+overlay_path_list= []  # List of images w\ full path
+overlay_name_list= []  # List of images' names
+valid_extensions = [ ".png" ]  # Allowable image extensions
 
+for file in os.listdir( overlay_path ):  # Loop over images in directory
+    extension    = os.path.splitext( file )[1]   # Get file's extensions
 
+    if( extension.lower() not in valid_extensions ):  # If extensions is not in valid
+        continue  # List, skip it.
+
+    else:  # Else, append full file path
+        overlay_path_list.append( os.path.join(overlay_path, file) )  # To list.
+        overlay_name_list.append( os.path.splitext(file)[0] )                   
+
+# Prepare overlay
+global overlayImg, counter
+counter     = 0  # Overlay switcher counter
+
+if (args.overlay):  # If a overlay path is given
+    overlayImg  = prepare_overlay( args["overlay"] )  # Prepare and process overlay
+else:  # Else use defualt value in "prepare_overlay()" function
+    overlayImg  = prepare_overlay()  # Prepare and process overlay
+
+# If argparse setvalues flag is set trigger main loop
 if(args.setvalues):
-    setup_windows()
+    setup_windows()  # Setup trackbar windows for main loop
     while(stream.isOpened()):
         ret, frame = stream.read()
         if ret == True:
-            image = frame
-            (h, w) = frame.shape[:2]                                                    # Determine width and height
-            frame = np.dstack([ frame, np.ones((h, w),                                  # Stack the arrays in sequence, 
-                                               dtype="uint8")*255 ])                    # depth-wise ( along the z-axis )
+            image = frame  # Copy for stacking
+            (h, w) = frame.shape[:2]  # Determine width and height
+            frame = np.dstack([ frame, np.ones((h, w),             # Stack the arrays in sequence, 
+                                               dtype="uint8") ])   # depth-wise ( along the z-axis )
+            overlay = np.zeros( ( h, w, 4 ), "uint8" )  # Empty np array w\ same dimensions as the frame
+            proc, minHSV, maxHSV = procFrame( image, None, None )  # Procceses frame for detection and returns values
+            params, detector = update_detector()  # Updates detector values from trackbar
+            image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame )  # Returns positional data and parameters
 
-            overlay = np.zeros( ( h, w, 4 ), "uint8" )                                  # Empty np array w\ same dimensions as the frame
-            
-            proc, minHSV, maxHSV = procFrame( image, None, None )
-
-            params, detector = update_detector()
-            image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame )
-
-            cv2.imshow( 'ScaleBar', image )                                                 # 
-            cv2.imshow( 'BlobParamsBar', img_detected )
-            cv2.imshow( 'HSVbars', proc)
-            if cv2.waitKey(1) & 0xFF == ord('r'):                           # press keystroke "r" to reset stream
+            cv2.imshow( 'ScaleBar', image )  # Show final output   
+            cv2.imshow( 'BlobParamsBar', img_detected )  # Shows Blob detector window
+            cv2.imshow( 'HSVbars', proc)  # Shows Rangefinder window
+            if cv2.waitKey(1) & 0xFF == ord('r'):  # Press keystroke "r" to reset stream
                 write_parameters( minHSV, maxHSV, parameters )
                 print("Range Values")
                 print(minHSV, maxHSV)
                 print("Resetting program now")
                 break
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            elif cv2.waitKey(1) & 0xFF == ord('q'):  # Press keystroke "q" to quit stream
                 print("Quitting now")
                 break
-        else:
+        else:  # If video stream ends print values and exit
             print("Range Values")
             print(minHSV, maxHSV)
             print("Stream over, resetting program now")
             write_parameters( minHSV, maxHSV, parameters )
             break
         
+    # Reset stream to reduce lag   
     stream.release()
     cv2.destroyAllWindows()           
-    # reset stream to reduce lag
-##    stream = cv2.VideoCapture("rtsp://{ip}/av0_1".format(ip = ip))
     stream = cv2.VideoCapture(args.stream)
 
-    setup_windows2()
+    setup_windows2()  # Setup final output window
     while(stream.isOpened()):
         ret, frame = stream.read()
         if ret == True:
             image = frame
-            (h, w) = frame.shape[:2]                                                    # Determine width and height
-            frame = np.dstack([ frame, np.ones((h, w),                                  # Stack the arrays in sequence, 
-                                               dtype="uint8")*255 ])                    # depth-wise ( along the z-axis )
+            (h, w) = frame.shape[:2]  # Determine width and height
+            frame = np.dstack([ frame, np.ones((h, w),                # Stack the arrays in sequence, 
+                                               dtype="uint8")*255 ])  # depth-wise ( along the z-axis )
+            overlay = np.zeros( ( h, w, 4 ), "uint8" )  # Empty np array w\ same dimensions as the frame
+            parameters, minHSV, maxHSV = read_parameters()  # Reads parameters from Json
+            proc, minHSV, maxHSV = procFrame( image, minHSV, maxHSV )  # Procceses frame for detection and returns values
+            image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame, parameters )  # Returns positional data and parameters
 
-            overlay = np.zeros( ( h, w, 4 ), "uint8" )                                  # Empty np array w\ same dimensions as the frame
-
-            parameters, minHSV, maxHSV = read_parameters()
-
-            proc, minHSV, maxHSV = procFrame( image, minHSV, maxHSV )
-
-            image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame, parameters )
-
-            cv2.imshow( 'ScaleBar', image )
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            cv2.imshow( 'ScaleBar', image )  # Show final output
+            if cv2.waitKey(1) & 0xFF == ord('q'):  # Press "q" to quit stream
                 print("Closing program now")
                 stream.release()
                 cv2.destroyAllWindows()
-        else:
+        else:  # Break loop if stream is over
             print("Stream over, closing program now")
             break
 
-
+# Else read parameter data from Json file fefault and show only final window
 else:
     setup_windows2()
     while(stream.isOpened()):
         ret, frame = stream.read()
         if ret == True:
             image = frame
-            (h, w) = frame.shape[:2]                                                    # Determine width and height
-            frame = np.dstack([ frame, np.ones((h, w),                                  # Stack the arrays in sequence, 
-                                               dtype="uint8")*255 ])                    # depth-wise ( along the z-axis )
-
-            overlay = np.zeros( ( h, w, 4 ), "uint8" )                                  # Empty np array w\ same dimensions as the frame
-
-            parameters, minHSV, maxHSV = read_parameters()
-            
-            proc, minHSV, maxHSV = procFrame( image, minHSV, maxHSV )
-
-            image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame, parameters )
-
-            cv2.imshow( 'ScaleBar', image )
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            (h, w) = frame.shape[:2]  # Determine width and height
+            frame = np.dstack([ frame, np.ones((h, w),                # Stack the arrays in sequence, 
+                                               dtype="uint8")*255 ])  # depth-wise ( along the z-axis )
+            overlay = np.zeros( ( h, w, 4 ), "uint8" )  # Empty np array w\ same dimensions as the frame
+            parameters, minHSV, maxHSV = read_parameters()  # Reads parameters from Json
+            proc, minHSV, maxHSV = procFrame( image, minHSV, maxHSV )  # Procceses frame for detection and returns values
+            image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame, parameters )  # Returns positional data and parameters
+  
+            cv2.imshow( 'ScaleBar', image )  # Show final output
+            if cv2.waitKey(1) & 0xFF == ord('q'):  # Press "q" to quit stream
                 print("Closing program now")
                 break
-        else:
+        else:  # Break loop if stream is over
             print("Stream over, closing program now")
             break
             
-stream.release()
-cv2.destroyAllWindows()
+stream.release()  # Releases stream after exit
+cv2.destroyAllWindows()  # Destroys all windows after exit
 
 
           
