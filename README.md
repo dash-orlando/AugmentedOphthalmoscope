@@ -73,6 +73,18 @@ sudo ldconfig
 sudo pip install imutils
 ```
 
+##### - Enable PiCam and test
+enable the camera in the interfacing option (5)
+
+```
+sudo raspi-config
+```
+then test output after reboot
+
+```
+raspistill -o output.jpg
+```
+
 ###### Mirror effect:-
 ```
 $ sudo nano /usr/local/lib/python2.7/dist-packages/imutils/video/pivideostream.py
