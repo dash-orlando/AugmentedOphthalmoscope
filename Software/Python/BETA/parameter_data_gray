@@ -1,0 +1,15 @@
+{
+    "blobparam": [
+        {
+            "color": 255, 
+            "minCircularity": 0.5, 
+            "maxthresh": 255, 
+            "minConvexity": 0.0, 
+            "minArea": 314.1592712402344, 
+            "minDistBetweenBlobs": 2000.0, 
+            "minInertiaRatio": 0.0, 
+            "maxArea": 1256.6370849609375, 
+            "minthresh": 95
+        }
+    ]
+}

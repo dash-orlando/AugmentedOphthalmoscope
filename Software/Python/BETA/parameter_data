@@ -14,14 +14,14 @@
         {
             "maxS": 255, 
             "maxH": 255, 
-            "maxV": 255
+            "maxV": 142
         }
     ], 
     "minHSV": [
         {
-            "minH": 97, 
-            "minS": 138, 
-            "minV": 127
+            "minH": 0, 
+            "minS": 0, 
+            "minV": 51
         }
     ]
 }

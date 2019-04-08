@@ -118,43 +118,39 @@ def placeholder3( x ):
 
 def setup_windows2():
     ''' Sets up overlay scaling window for final display'''
-    cv2.namedWindow( "ScaleBar" )
+    cv2.namedWindow( "ScaleBar", cv2.WINDOW_NORMAL  )
     cv2.moveWindow("ScaleBar", 0, 0)  # Sets window postion to top left of display
-    cv2.createTrackbar( "OverlayScaleValue", "ScaleBar", 100, 200, placeholder2 )
+    cv2.createTrackbar( "OverlayScaleValue", "ScaleBar", 100, 500, placeholder2 )
     cv2.createTrackbar( "x-center", "ScaleBar", 320, 640, placeholder2 )
     cv2.createTrackbar( "y-center", "ScaleBar", 240, 480, placeholder2 )
     cv2.createTrackbar( "Zoom", "ScaleBar", 100, 200, placeholder2 )
     cv2.setMouseCallback( "ScaleBar", control )
 
     return
+
 def setup_windows():
     ''' Sets up all main windows for value tuning'''
     # Sets up overlay scaling window
     cv2.namedWindow( "ScaleBar" )
     cv2.moveWindow("ScaleBar", 0, 0)  # Sets window postion to top middle of display
-    cv2.createTrackbar( "OverlayScaleValue", "ScaleBar", 100, 200, placeholder2 )
+    cv2.createTrackbar( "OverlayScaleValue", "ScaleBar", 100, 500, placeholder2 )
     cv2.createTrackbar( "x-center", "ScaleBar", 320, 640, placeholder2 )
     cv2.createTrackbar( "y-center", "ScaleBar", 240, 480, placeholder2 )
     cv2.createTrackbar( "Zoom", "ScaleBar", 100, 200, placeholder2 )
     cv2.setMouseCallback( "ScaleBar", control )
     # Setup blob detecting window
     cv2.namedWindow( "BlobParamsBar" )                                                  
-    cv2.moveWindow("BlobParamsBar", 640, 0)
+    cv2.moveWindow("BlobParamsBar", 960, 0)
     # Trackbars for Blobdetector parameters
+    cv2.createTrackbar( "Min threshold"          , "BlobParamsBar", 80 , 255, placeholder )
+    cv2.createTrackbar( "Max threshold"          , "BlobParamsBar", 255 , 255, placeholder )
     cv2.createTrackbar( "Black = 0 White = 255"  , "BlobParamsBar", 255, 255, placeholder )
-    cv2.createTrackbar( "minRadius"              , "BlobParamsBar", 30 , 100, placeholder )
-    cv2.createTrackbar( "maxRadius"              , "BlobParamsBar", 45 , 100, placeholder )
+    cv2.createTrackbar( "minRadius"              , "BlobParamsBar", 10 , 100, placeholder )
+    cv2.createTrackbar( "maxRadius"              , "BlobParamsBar", 20 , 100, placeholder )
     cv2.createTrackbar( "Circularity"            , "BlobParamsBar", 50 , 100, placeholder )
     cv2.createTrackbar( "Convexity"              , "BlobParamsBar", 50 , 100, placeholder )
     cv2.createTrackbar( "InertiaRatio"           , "BlobParamsBar", 50 , 100, placeholder )
-    # Trackbars for HSV parameters
-    cv2.namedWindow("HSVbars", 0)
-    cv2.moveWindow("HSVbars", 1280, 0)  # Sets window postion to top right of display
-    for i in ["MIN", "MAX"]:  # Creating Trackbars for HSV min and max
-        v = 0 if i == "MIN" else 255
-        for j in "HSV":
-            cv2.createTrackbar("%s_%s" % (j, i), "HSVbars", v, 255, placeholder3)   
-    return()
+
 
 #-----
                         
@@ -173,6 +169,8 @@ def update_detector():
     global detector, parameters
     parameters = cv2.SimpleBlobDetector_Params()
     # Retrieves parameters from trackbars realtime
+
+    BlackOrWhite = cv2.getTrackbarPos( "Black = 0 White = 255"  , "BlobParamsBar" )
     BlackOrWhite = cv2.getTrackbarPos( "Black = 0 White = 255"  , "BlobParamsBar" )
     r_min        = cv2.getTrackbarPos( "minRadius"              , "BlobParamsBar" )
     r_max        = cv2.getTrackbarPos( "maxRadius"              , "BlobParamsBar" )
@@ -202,13 +200,10 @@ def update_detector():
     return( parameters, detector )
 def get_trackbar_values():
     ''' Gets the currect trackbar values and returns them'''
-    values = []
-    for i in ["MIN", "MAX"]:
-        for j in "HSV":
-            # Retrieves HSV values from trackbars
-            v = cv2.getTrackbarPos("%s_%s" % (j, i), "HSVbars")
-            values.append(v)
-    return values
+    v1_min       = cv2.getTrackbarPos( "Min threshold"  , "BlobParamsBar" )
+    v1_max       = cv2.getTrackbarPos( "Max threshold"  , "BlobParamsBar" )
+
+    return (v1_min, v1_max)
 
 #-----
 
@@ -251,23 +246,27 @@ def procFrame( image, minHSV=None, maxHSV=None ):
     height,width,depth = image.shape
     x, y, d = Center_update()
     mask = np.zeros((height,width), dtype="uint8")
-    cv2.circle(mask,(x,y),240,(255,255,255),thickness=-1)
+    cv2.circle(mask,(d,d),d,(255,255,255),thickness=-1)
     ROI = cv2.bitwise_and( image, image, mask=mask )
     # Roi for the detecting function (faster and more reliable)
     ROI = cv2.cvtColor( ROI, cv2.COLOR_BGR2GRAY)
     # Switches to from RGB colorspace to LAB colorspace
     # Min and max HSV values found from Range_Finder function
     if np.all(minHSV == None) and np.all(maxHSV == None):
-        v1_min, v2_min, v3_min, v1_max, v2_max, v3_max = get_trackbar_values()
-##        minHSV = np.array([v1_min, v2_min, v3_min])
+        v1_min, v1_max = get_trackbar_values()
         minHSV = v1_min
         maxHSV = v1_max
-##        maxHSV = np.array([v1_max, v2_max, v3_max])
-        processed = cv2.inRange(ROI, minHSV, maxHSV)
-        processed = cv2.GaussianBlur( processed, (5, 5), 25 )
+##        processed = cv2.inRange(ROI, minHSV, maxHSV)
+        _, processed = cv2.threshold(ROI, minHSV, maxHSV, cv2.THRESH_BINARY)
+        processed = cv2.erode(processed, None, iterations=2)
+        processed = cv2.dilate(processed, None, iterations=2)
+        processed = cv2.medianBlur(processed, 5)
     else:
-        processed = cv2.inRange(ROI, minHSV, maxHSV)
-        processed = cv2.GaussianBlur( processed, (5, 5), 25 )
+##        processed = cv2.inRange(ROI, minHSV, maxHSV)
+        _, processed = cv2.threshold(ROI, minHSV, maxHSV, cv2.THRESH_BINARY)
+        processed = cv2.erode(processed, None, iterations=2)
+        processed = cv2.dilate(processed, None, iterations=2)
+        processed = cv2.medianBlur(processed, 5)
     return( processed, minHSV, maxHSV )
 
 #-----
@@ -302,13 +301,15 @@ def prepare_overlay( img=None ):
 
 def add_overlay( overlay_frame, overlay_img, frame, pos ):
     ''' Scales, adds alpha weight, and overlays onto image'''
-
+    x, y, d = Center_update()
     # Unpack co-ordinates
     x, y, r = pos
+    x = x*640/(2*d)
+    y = y*640/(2*d)
     
     # Scale factor DO NOT SET TO ****ZERO**** bad things happen, like explosive things, bye bye program!!!
     scale_val = ScaleBar_update()
-    r_scaled = r * scale_val / 100
+    r_scaled = r*640/(2*d) * scale_val / 100
     width = 2 * r_scaled
     height = 2 * r_scaled
     dim = ( width, height )
@@ -374,20 +375,10 @@ def find_pupil( processed, overlay_frame, overlay_img, frame, parameters=None ):
 def write_parameters( minHSV, maxHSV, parameters ):
     ''' Writes down parameter data in a JSON file for later extraction after program reset'''
     param_dict = {}
-    param_dict['minHSV'] = []
-    param_dict['minHSV'].append({
-        'minH' : minHSV[0],
-        'minS' : minHSV[1],
-        'minV' : minHSV[2]
-    })
-    param_dict['maxHSV'] = []
-    param_dict['maxHSV'].append({
-        'maxH' : maxHSV[0],
-        'maxS' : maxHSV[1],
-        'maxV' : maxHSV[2]
-    })
     param_dict['blobparam'] = []
     param_dict['blobparam'].append({
+        'minthresh' : minHSV,
+        'maxthresh' : maxHSV,
         'minArea' : parameters.minArea,
         'maxArea' : parameters.maxArea,
         'color' : parameters.blobColor,
@@ -396,12 +387,12 @@ def write_parameters( minHSV, maxHSV, parameters ):
         'minInertiaRatio' : parameters.minInertiaRatio,
         'minDistBetweenBlobs' : parameters.minDistBetweenBlobs
     })
-    with open( 'parameter_data', 'w' ) as outfile:
+    with open( 'parameter_data_gray', 'w' ) as outfile:
         json.dump( param_dict, outfile, indent=4 )
 
 #-----
 
-def read_parameters( filename='parameter_data' ):
+def read_parameters( filename='parameter_data_gray' ):
     ''' Reads parameter data in a JSON file for new program reset window'''
     parameters = cv2.SimpleBlobDetector_Params()
     with open( filename ) as json_file:   
@@ -414,16 +405,8 @@ def read_parameters( filename='parameter_data' ):
             parameters.blobColor = p['color']
             parameters.maxArea = p['maxArea']
             parameters.minArea =  p['minArea']
-        minHSV = np.empty(3)
-        for p in param_dict['minHSV']:
-            minHSV[0] = p['minH']
-            minHSV[1] = p['minS']
-            minHSV[2] = p['minV']    
-        maxHSV = np.empty(3)
-        for p in param_dict['maxHSV']:
-            maxHSV[0] = p['maxH']
-            maxHSV[1] = p['maxS']
-            maxHSV[2] = p['maxV']
+            minHSV = p['minthresh']
+            maxHSV = p['maxthresh']
 
     return ( parameters, minHSV, maxHSV )
                     
@@ -468,19 +451,19 @@ if(args.setvalues):
             height,width,depth = frame.shape
             x, y, d = Center_update()
             frame = frame[y-d:y+d, x-d:x+d]
-            frame = cv2.resize( frame, (640,480), interpolation=cv2.INTER_AREA )
+            framed = frame
+            frame = cv2.resize( frame, (640, 640), interpolation=cv2.INTER_AREA )
             image = frame  # Copy for stacking
             (h, w) = frame.shape[:2]  # Determine width and height
             frame = np.dstack([ frame, np.ones((h, w),             # Stack the arrays in sequence, 
                                                dtype="uint8") ])   # depth-wise ( along the z-axis )
             overlay = np.zeros( ( h, w, 4 ), "uint8" )  # Empty np array w\ same dimensions as the frame
-            proc, minHSV, maxHSV = procFrame( image, None, None )  # Procceses frame for detection and returns values
+            proc, minHSV, maxHSV = procFrame( framed, None, None )  # Procceses frame for detection and returns values
             params, detector = update_detector()  # Updates detector values from trackbar
             image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame )  # Returns positional data and parameters
-
+##            image = cv2.resize( image, (480,480), interpolation=cv2.INTER_AREA )
             cv2.imshow( 'ScaleBar', image )  # Show final output   
             cv2.imshow( 'BlobParamsBar', img_detected )  # Shows Blob detector window
-            cv2.imshow( 'HSVbars', proc)  # Shows Rangefinder window
             if cv2.waitKey(1) & 0xFF == ord('r'):  # Press keystroke "r" to reset stream
                 write_parameters( minHSV, maxHSV, parameters )
                 print("Range Values")
@@ -510,14 +493,14 @@ if(args.setvalues):
             height,width,depth = frame.shape
             x, y, d = Center_update()
             frame = frame[y-d:y+d, x-d:x+d]
-            frame = cv2.resize( frame, (640,480), interpolation=cv2.INTER_AREA )
-            image = frame
+            framed = frame
+            frame = cv2.resize( frame, (640, 640), interpolation=cv2.INTER_AREA )
             (h, w) = frame.shape[:2]  # Determine width and height
             frame = np.dstack([ frame, np.ones((h, w),                # Stack the arrays in sequence, 
                                                dtype="uint8")*255 ])  # depth-wise ( along the z-axis )
             overlay = np.zeros( ( h, w, 4 ), "uint8" )  # Empty np array w\ same dimensions as the frame
             parameters, minHSV, maxHSV = read_parameters()  # Reads parameters from Json
-            proc, minHSV, maxHSV = procFrame( image, minHSV, maxHSV )  # Procceses frame for detection and returns values
+            proc, minHSV, maxHSV = procFrame( framed, minHSV, maxHSV )  # Procceses frame for detection and returns values
             image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame, parameters )  # Returns positional data and parameters
 
             cv2.imshow( 'ScaleBar', image )  # Show final output
@@ -540,14 +523,14 @@ else:
             height,width,depth = frame.shape
             x, y, d = Center_update()
             frame = frame[y-d:y+d, x-d:x+d]
-            frame = cv2.resize( frame, (640,480), interpolation=cv2.INTER_AREA )
-            image = frame
+            framed = frame
+            frame = cv2.resize( frame, (640, 640), interpolation=cv2.INTER_AREA )
             (h, w) = frame.shape[:2]  # Determine width and height
             frame = np.dstack([ frame, np.ones((h, w),                # Stack the arrays in sequence, 
                                                dtype="uint8")*255 ])  # depth-wise ( along the z-axis )
             overlay = np.zeros( ( h, w, 4 ), "uint8" )  # Empty np array w\ same dimensions as the frame
             parameters, minHSV, maxHSV = read_parameters()  # Reads parameters from Json
-            proc, minHSV, maxHSV = procFrame( image, minHSV, maxHSV )  # Procceses frame for detection and returns values
+            proc, minHSV, maxHSV = procFrame( framed, minHSV, maxHSV )  # Procceses frame for detection and returns values
             image, img_detected, parameters = find_pupil( proc, overlay, overlayImg, frame, parameters )  # Returns positional data and parameters
             cv2.imshow( 'ScaleBar', image )  # Show final output
             
